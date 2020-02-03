@@ -13,6 +13,14 @@ create hostPath Volumes. As a result, this PoC has the following limitations:
 
 ## How to test
 
+Clone this repo:
+```
+git clone https://github.com/charmed-kubernetes/charm-multus.git
+cd charm-multus
+git submodule init
+git submodule update
+```
+
 Deploy kubernetes-core with Ceph:
 
 ```
