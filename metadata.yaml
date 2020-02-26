@@ -16,12 +16,6 @@ resources:
   multus-image:
     type: oci-image
     description: 'Multus image'
-storage:
-  cni-conf:
-    type: filesystem
-    location: '/host/etc/cni/net.d'
-  cni-bin:
-    type: filesystem
-    location: '/host/opt/cni/bin'
 deployment:
+  type: daemon
   service: omit
