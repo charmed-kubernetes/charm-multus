@@ -4,47 +4,55 @@ import sys
 sys.path.append('lib')
 
 from ops.charm import CharmBase
-from ops.framework import StoredState
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus
-from oci_image import OCIImageResource
+from oci_image import OCIImageResource, ResourceError
 
 
 class MultusCharm(CharmBase):
-    state = StoredState()
-
     def __init__(self, *args):
         super().__init__(*args)
-        self.framework.observe(self.on.start, self.init_state)
         self.multus_image = OCIImageResource(self, 'multus-image')
-        self.framework.observe(self.multus_image.on.image_available, self.image_available)
+        self.framework.observe(self.on.start, self.set_pod_spec)
 
-    def init_state(self, event):
-        self.state.registry_path = None
-        self.state.registry_user = None
-        self.state.registry_pass = None
+    def set_pod_spec(self, event):
+        if not self.model.unit.is_leader():
+            print('Not a leader, skipping set_pod_spec')
+            self.model.unit.status = ActiveStatus()
+            return
 
-    def image_available(self, event):
-        self.state.registry_path = event.registry_path
-        self.state.registry_user = event.username
-        self.state.registry_pass = event.password
-        self.set_pod_spec()
+        try:
+            image_details = self.multus_image.fetch()
+        except ResourceError as e:
+            self.model.unit.status = e.status
+            return
 
-    def set_pod_spec(self):
         self.model.unit.status = MaintenanceStatus('Setting pod spec')
         self.model.pod.set_spec({
-            'version': 2,
+            'version': 3,
             'containers': [{
                 'name': 'kube-multus',
-                'imageDetails': {
-                    'imagePath': self.state.registry_path,
-                    'username': self.state.registry_user,
-                    'password': self.state.registry_pass
-                },
+                'imageDetails': image_details,
                 'command': ['/entrypoint.sh'],
                 'args': [
                     '--multus-conf-file=auto',
                     '--cni-version=0.3.1'
+                ],
+                'volumeConfig': [
+                    {
+                        'name': 'cni',
+                        'mountPath': '/host/etc/cni/net.d',
+                        'hostPath': {
+                            'path': '/etc/cni/net.d'
+                        }
+                    },
+                    {
+                        'name': 'cnibin',
+                        'mountPath': '/host/opt/cni/bin',
+                        'hostPath': {
+                            'path': '/opt/cni/bin'
+                        }
+                    }
                 ],
                 'kubernetes': {
                     'securityContext': {
@@ -74,6 +82,9 @@ class MultusCharm(CharmBase):
                 ]
             },
             'kubernetesResources': {
+                'pod': {
+                    'hostNetwork': True
+                },
                 'customResourceDefinitions': {
                     'network-attachment-definitions.k8s.cni.cncf.io': {
                         'group': 'k8s.cni.cncf.io',
@@ -108,6 +119,8 @@ class MultusCharm(CharmBase):
                 }
             }
         })
+
+        self.model.unit.status = ActiveStatus()
 
 
 if __name__ == '__main__':
