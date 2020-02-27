@@ -5,11 +5,19 @@ Kubernetes.
 
 ## Limitations
 
-In Juju 2.7.1, it's not possible for k8s charms to create DaemonSets or to
-create hostPath Volumes. As a result, this PoC has the following limitations:
+This charm requires functionality from Juju 2.8+ which is currently under
+active development. In order to run Multus, you will need to install Juju from
+edge:
 
-* Only works with 1 kubernetes-worker
-* Requires manual creation of PersistentVolume storage
+```
+sudo snap install juju --channel edge --classic
+```
+
+Or if Juju is already installed, refresh it:
+
+```
+sudo snap refresh juju --channel edge
+```
 
 ## How to test
 
@@ -21,10 +29,10 @@ git submodule init
 git submodule update
 ```
 
-Deploy kubernetes-core with Ceph:
+Deploy Charmed Kubernetes with Ceph:
 
 ```
-juju deploy cs:kubernetes-core
+juju deploy cs:charmed-kubernetes
 juju deploy -n 3 ceph-mon
 juju deploy -n 3 ceph-osd --storage osd-devices=32G,2 --storage osd-journals=8G,1
 juju add-relation ceph-osd ceph-mon
@@ -43,52 +51,7 @@ Create k8s model:
 juju add-model k8s k8s
 ```
 
-Create k8s PeristentVolume:
-```
-cat > storage.yaml << EOF
-kind: PersistentVolume
-apiVersion: v1
-metadata:
-  name: cni-conf-0
-spec:
-  capacity:
-    storage: 100Mi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: k8s-multus-cni-conf
-  hostPath:
-    path: "/etc/cni/net.d"
----
-kind: PersistentVolume
-apiVersion: v1
-metadata:
-  name: cni-bin-0
-spec:
-  capacity:
-    storage: 100Mi
-  accessModes:
-    - ReadWriteOnce
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: k8s-multus-cni-bin
-  hostPath:
-    path: "/opt/cni/bin"
-EOF
-kubectl apply -f storage.yaml
-```
-
-Create storage pool:
-```
-for suffix in conf bin; do
-  juju create-storage-pool multus-cni-$suffix kubernetes \
-    storage-class=multus-cni-$suffix \
-    storage-provisioner=kubernetes.io/no-provisioner
-done
-```
-
 Deploy multus:
 ```
-juju deploy . --resource multus-image=nfvpe/multus:v3.4 \
-  --storage cni-conf=multus-cni-conf,10M \
-  --storage cni-bin=multus-cni-bin,10M
+juju deploy . --resource multus-image=nfvpe/multus:v3.4
 ```
