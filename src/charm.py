@@ -16,6 +16,11 @@ class MultusCharm(CharmBase):
         self.framework.observe(self.on.start, self.set_pod_spec)
 
     def set_pod_spec(self, event):
+        if not self.model.unit.is_leader():
+            print('Not a leader, skipping set_pod_spec')
+            self.model.unit.status = ActiveStatus()
+            return
+
         try:
             image_details = self.multus_image.fetch()
         except ResourceError as e:
@@ -114,6 +119,8 @@ class MultusCharm(CharmBase):
                 }
             }
         })
+
+        self.model.unit.status = ActiveStatus()
 
 
 if __name__ == '__main__':
