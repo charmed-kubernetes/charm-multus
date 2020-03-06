@@ -10,10 +10,11 @@ from oci_image import OCIImageResource, ResourceError
 
 
 class MultusCharm(CharmBase):
-    def __init__(self, *args):
-        super().__init__(*args)
+    def __init__(self, framework, key):
+        super().__init__(framework, key)
         self.multus_image = OCIImageResource(self, 'multus-image')
-        self.framework.observe(self.on.start, self.set_pod_spec)
+        self.framework.observe(self.on.install, self.set_pod_spec)
+        self.framework.observe(self.on.upgrade_charm, self.set_pod_spec)
 
     def set_pod_spec(self, event):
         if not self.model.unit.is_leader():

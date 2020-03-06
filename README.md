@@ -19,7 +19,7 @@ Or if Juju is already installed, refresh it:
 sudo snap refresh juju --channel edge
 ```
 
-## How to test
+## Development
 
 Clone this repo:
 ```
@@ -30,28 +30,23 @@ git submodule update
 ```
 
 Deploy Charmed Kubernetes with Ceph:
-
 ```
-juju deploy cs:charmed-kubernetes
-juju deploy -n 3 ceph-mon
-juju deploy -n 3 ceph-osd --storage osd-devices=32G,2 --storage osd-journals=8G,1
-juju add-relation ceph-osd ceph-mon
-juju add-relation ceph-mon:admin kubernetes-master
-juju add-relation ceph-mon:client kubernetes-master
+wget https://raw.githubusercontent.com/charmed-kubernetes/bundle/master/overlays/ceph-rbd.yaml
+juju deploy cs:charmed-kubernetes --overlay ceph-rbd.yaml
 ```
 
-Add k8s to juju controller:
+Add k8s to Juju controller:
 ```
 juju scp kubernetes-master/0:config ~/.kube/config
-juju add-k8s k8s --controller <controller-name>
+juju add-k8s my-k8s-cloud --controller $(juju switch | cut -d: -f1)
 ```
 
 Create k8s model:
 ```
-juju add-model k8s k8s
+juju add-model my-k8s-model my-k8s-cloud
 ```
 
-Deploy multus:
+Deploying a local copy of Multus:
 ```
 juju deploy . --resource multus-image=nfvpe/multus:v3.4
 ```
