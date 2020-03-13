@@ -62,25 +62,27 @@ class MultusCharm(CharmBase):
                 }
             }],
             'serviceAccount': {
-                'global': True,
-                'rules': [
-                    {
-                        'apiGroups': ['k8s.cni.cncf.io'],
-                        'resources': ['*'],
-                        'verbs': ['*']
-                    },
-                    {
-                        'apiGroups': [''],
-                        'resources': [
-                            'pods',
-                            'pods/status'
-                        ],
-                        'verbs': [
-                            'get',
-                            'update'
-                        ]
-                    }
-                ]
+                'roles': [{
+                    'global': True,
+                    'rules': [
+                        {
+                            'apiGroups': ['k8s.cni.cncf.io'],
+                            'resources': ['*'],
+                            'verbs': ['*']
+                        },
+                        {
+                            'apiGroups': [''],
+                            'resources': [
+                                'pods',
+                                'pods/status'
+                            ],
+                            'verbs': [
+                                'get',
+                                'update'
+                            ]
+                        }
+                    ]
+                }]
             },
             'kubernetesResources': {
                 'pod': {
