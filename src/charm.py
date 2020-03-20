@@ -88,8 +88,9 @@ class MultusCharm(CharmBase):
                 'pod': {
                     'hostNetwork': True
                 },
-                'customResourceDefinitions': {
-                    'network-attachment-definitions.k8s.cni.cncf.io': {
+                'customResourceDefinitions': [{
+                    'name': 'network-attachment-definitions.k8s.cni.cncf.io',
+                    'spec': {
                         'group': 'k8s.cni.cncf.io',
                         'scope': 'Namespaced',
                         'names': {
@@ -119,7 +120,7 @@ class MultusCharm(CharmBase):
                             }
                         }
                     }
-                }
+                }]
             }
         })
 
