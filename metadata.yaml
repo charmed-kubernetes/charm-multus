@@ -19,3 +19,4 @@ resources:
 deployment:
   type: daemon
   service: omit
+min-juju-version: 2.8-beta1
