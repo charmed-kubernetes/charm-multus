@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 
+import json
 import logging
 from ops.charm import CharmBase
 from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus
+from ops.model import ActiveStatus, MaintenanceStatus, BlockedStatus
 from oci_image import OCIImageResource, OCIImageResourceError
+import traceback
+import yaml
 
 log = logging.getLogger()
 
@@ -15,6 +18,7 @@ class MultusCharm(CharmBase):
         self.multus_image = OCIImageResource(self, 'multus-image')
         self.framework.observe(self.on.install, self.set_pod_spec)
         self.framework.observe(self.on.upgrade_charm, self.set_pod_spec)
+        self.framework.observe(self.on.config_changed, self.set_pod_spec)
 
     def set_pod_spec(self, event):
         if not self.model.unit.is_leader():
@@ -28,8 +32,19 @@ class MultusCharm(CharmBase):
             self.model.unit.status = e.status
             return
 
-        self.model.unit.status = MaintenanceStatus('Setting pod spec')
-        self.model.pod.set_spec({
+        net_attach_defs_str = self.model.config.get(
+            'network-attachment-definitions', '[]'
+        )
+        try:
+            net_attach_defs = yaml.safe_load(net_attach_defs_str)
+        except yaml.YAMLError:
+            log.error(traceback.format_exc())
+            msg = 'network-attachment-definitions config is invalid' + \
+                ', see debug-log'
+            self.model.unit.status = BlockedStatus(msg)
+            return
+
+        pod_spec = {
             'version': 3,
             'containers': [{
                 'name': 'kube-multus',
@@ -122,8 +137,36 @@ class MultusCharm(CharmBase):
                     }
                 }]
             }
-        })
+        }
 
+        custom_resources = []
+        for net_attach_def in net_attach_defs:
+            metadata = {
+                'name': net_attach_def['name']
+            }
+            if 'namespace' in net_attach_def:
+                metadata['namespace'] = net_attach_def['namespace']
+            if 'resource-name' in net_attach_def:
+                metadata['annotations'] = {
+                    'k8s.v1.cni.cncf.io/resourceName': net_attach_def['resource-name']
+                }
+            custom_resource = {
+                'apiVersion': 'k8s.cni.cncf.io/v1',
+                'kind': 'NetworkAttachmentDefinition',
+                'metadata': metadata,
+                'spec': {
+                    'config': json.dumps(net_attach_def['config'], indent=2)
+                }
+            }
+            custom_resources.append(custom_resource)
+
+        if custom_resources:
+            pod_spec['kubernetesResources']['customResources'] = {
+                'network-attachment-definitions.k8s.cni.cncf.io': custom_resources
+            }
+
+        self.model.unit.status = MaintenanceStatus('Setting pod spec')
+        self.model.pod.set_spec(pod_spec)
         self.model.unit.status = ActiveStatus()
 
 
