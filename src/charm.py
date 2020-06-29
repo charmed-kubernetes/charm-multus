@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-import sys
-sys.path.append('lib')
-
+import logging
 from ops.charm import CharmBase
 from ops.main import main
 from ops.model import ActiveStatus, MaintenanceStatus
-from oci_image import OCIImageResource, ResourceError
+from oci_image import OCIImageResource, OCIImageResourceError
+
+log = logging.getLogger()
 
 
 class MultusCharm(CharmBase):
@@ -18,13 +18,13 @@ class MultusCharm(CharmBase):
 
     def set_pod_spec(self, event):
         if not self.model.unit.is_leader():
-            print('Not a leader, skipping set_pod_spec')
+            log.info('Not a leader, skipping set_pod_spec')
             self.model.unit.status = ActiveStatus()
             return
 
         try:
             image_details = self.multus_image.fetch()
-        except ResourceError as e:
+        except OCIImageResourceError as e:
             self.model.unit.status = e.status
             return
 
