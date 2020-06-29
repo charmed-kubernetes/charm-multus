@@ -44,7 +44,36 @@ Create k8s model:
 juju add-model my-k8s-model my-k8s-cloud
 ```
 
-Deploying a local copy of Multus:
+Deploy Multus:
 ```
 juju deploy ./multus.charm --resource multus-image=nfvpe/multus:v3.4
+```
+
+Manually apply RBAC rules so the Multus charm can create
+NetworkAttachmentDefinitions:
+```
+$ cat rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: multus-network-attachment-definitions
+rules:
+- apiGroups: ["k8s.cni.cncf.io"]
+  resources: ["network-attachment-definitions"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: multus-network-attachment-definitions
+subjects:
+- kind: ServiceAccount
+  namespace: my-k8s-model  # <-- YOUR JUJU MODEL NAME HERE
+  name: multus-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: multus-network-attachment-definitions
+
+$ kubectl apply -f rbac.yaml
 ```
