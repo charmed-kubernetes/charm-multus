@@ -44,7 +44,7 @@ Create k8s model:
 juju add-model my-k8s-model my-k8s-cloud
 ```
 
-Deploying a local copy of Multus:
+Deploy Multus:
 ```
 juju deploy ./multus.charm --resource multus-image=nfvpe/multus:v3.4
 ```

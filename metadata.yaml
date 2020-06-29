@@ -16,6 +16,9 @@ resources:
   multus-image:
     type: oci-image
     description: 'Multus image'
+  net-attach-def-manager-image:
+    type: oci-image
+    description: 'net-attach-def-manager image'
 deployment:
   type: daemon
   service: omit
