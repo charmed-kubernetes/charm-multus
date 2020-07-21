@@ -1,0 +1,54 @@
+options:
+  network-attachment-definitions:
+    type: string
+    default: ''
+    description: |
+      YAML definitions of NetworkAttachmentDefinitions to create in Kubernetes.
+      Multuple NetworkAttachmentDefinitions can be specified by separating them
+      with ---.
+
+      Example value:
+
+      apiVersion: "k8s.cni.cncf.io/v1"
+      kind: NetworkAttachmentDefinition
+      metadata:
+        name: flannel
+        namespace: default
+      spec:
+        config: |
+          {
+              "cniVersion": "0.3.1",
+              "plugins": [
+                {
+                  "type": "flannel",
+                  "delegate": {
+                    "hairpinMode": true,
+                    "isDefaultGateway": true
+                  }
+                },
+                {
+                  "type": "portmap",
+                  "capabilities": {"portMappings": true},
+                  "snat": true
+                }
+              ]
+          }
+      ---
+      apiVersion: "k8s.cni.cncf.io/v1"
+      kind: NetworkAttachmentDefinition
+      metadata:
+        name: sriov
+        namespace: default
+        annotations:
+          k8s.v1.cni.cncf.io/resourceName: intel.com/sriov
+      spec:
+        config: |
+          {
+            "type": "sriov",
+            "ipam": {
+              "type": "host-local",
+              "ranges": [[{
+                  "subnet": "10.123.123.0/24"
+              }]]
+            }
+          }

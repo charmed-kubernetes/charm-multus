@@ -21,12 +21,10 @@ sudo snap refresh juju --channel edge
 
 ## Development
 
-Clone this repo:
+Build the charm:
+
 ```
-git clone https://github.com/charmed-kubernetes/charm-multus.git
-cd charm-multus
-git submodule init
-git submodule update
+charmcraft build
 ```
 
 Deploy Charmed Kubernetes with Ceph:
@@ -46,7 +44,7 @@ Create k8s model:
 juju add-model my-k8s-model my-k8s-cloud
 ```
 
-Deploying a local copy of Multus:
+Deploy Multus:
 ```
-juju deploy . --resource multus-image=nfvpe/multus:v3.4
+juju deploy ./multus.charm --resource multus-image=nfvpe/multus:v3.4
 ```
