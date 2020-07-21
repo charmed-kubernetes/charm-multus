@@ -1,14 +1,4 @@
 #!/usr/bin/env bash
 set -eux
 
-export KUBE_VERSION=v1.18.5
-export KUBE_ARCH="$(dpkg --print-architecture)"
-
-rm -rf build.tmp
-mkdir build.tmp
-(cd build.tmp
-  wget https://storage.googleapis.com/kubernetes-release/release/${KUBE_VERSION}/bin/linux/${KUBE_ARCH}/kubectl
-  chmod +x kubectl
-)
 DOCKER_BUILDKIT=1 docker build . -t net-attach-def-manager
-rm -rf build.tmp
