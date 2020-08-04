@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -x
+
+export PATH=/snap/bin:$PATH
+
+charm whoami
+RET=$?
+if ((RET > 0)); then
+    echo "Not logged into charmstore"
+    exit 1
+fi
+
+rm -rf temp
+mkdir temp
+cd temp
+unzip ../"$CHARM".charm
+URL=$(charm push . cs:~"$NAMESPACE"/"$CHARM" | yq r - url)
+charm attach cs:~"$NAMESPACE"/"$CHARM" --channel unpublished net-attach-def-manager-image=net-attach-def-manager
+charm attach cs:~"$NAMESPACE"/"$CHARM" --channel unpublished multus-image=nfvpe/multus:v3.4
+
+if [ "$CHANNEL" != unpublished ]; then
+    MULTUS_IMAGE_NAME=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [0].name)
+    MULTUS_IMAGE_REV=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [0].revision)
+
+    NET_ATTACH_IMAGE_NAME=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [1].name)
+    NET_ATTACH_IMAGE_REV=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [1].revision)
+
+
+    charm release "$URL" --channel "$CHANNEL" --resource "$MULTUS_IMAGE_NAME"-"$MULTUS_IMAGE_REV" --resource "$NET_ATTACH_IMAGE_NAME"-"$NET_ATTACH_IMAGE_REV"
+fi
