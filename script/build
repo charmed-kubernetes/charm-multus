@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -x
+
+docker pull nfvpe/multus:v3.4
+cd net-attach-def-manager
+./build
+cd ..
+
+$HOME/.local/bin/charmcraft build

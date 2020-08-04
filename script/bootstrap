@@ -1,0 +1,9 @@
+#!/bin/bash
+
+set -x
+
+sudo apt update
+sudo apt install -qyf python3-pip unzip
+pip3 install --user charmcraft
+sudo snap install charm --classic
+sudo snap install yq
