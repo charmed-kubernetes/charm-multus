@@ -1,31 +1,25 @@
 #!/bin/bash
-
-set -x
+set -eu
 
 export PATH=/snap/bin:$PATH
 
-charm whoami
-RET=$?
-if ((RET > 0)); then
-    echo "Not logged into charmstore"
+if ! charm whoami > /dev/null; then
+    echo "Not logged into charm store" 2>&1
     exit 1
 fi
+URL=$(charm push "$CHARM_BUILD_DIR/$CHARM.charm" "cs:~$NAMESPACE/$CHARM" | yq r - url)
+echo "Uploaded: $URL"
 
-rm -rf temp
-mkdir temp
-cd temp
-unzip ../"$CHARM".charm
-URL=$(charm push . cs:~"$NAMESPACE"/"$CHARM" | yq r - url)
-charm attach cs:~"$NAMESPACE"/"$CHARM" --channel unpublished net-attach-def-manager-image=net-attach-def-manager
-charm attach cs:~"$NAMESPACE"/"$CHARM" --channel unpublished multus-image=nfvpe/multus:v3.4
+MULTUS_IMAGE=$(yq r "metadata.yaml" "resources.multus-image.upstream-source")
+docker pull "$MULTUS_IMAGE"
+MULTUS_IMAGE_REV=$(charm attach cs:~"$NAMESPACE"/"$CHARM" --channel unpublished "multus-image=$MULTUS_IMAGE" | tail -n1 | sed -e 's/uploaded revision \([0-9]*\) of.*/\1/')
+echo "Attached: multus-image-$MULTUS_IMAGE_REV"
+
+NADF="net-attach-def-manager"
+NADF_IMAGE_REV=$(charm attach cs:~"$NAMESPACE"/"$CHARM" --channel unpublished "$NADF-image=$NADF" | tail -n1 | sed -e 's/uploaded revision \([0-9]*\) of.*/\1/')
+echo "Attached: $NADF-image-$NADF_IMAGE_REV"
 
 if [ "$CHANNEL" != unpublished ]; then
-    MULTUS_IMAGE_NAME=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [0].name)
-    MULTUS_IMAGE_REV=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [0].revision)
-
-    NET_ATTACH_IMAGE_NAME=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [1].name)
-    NET_ATTACH_IMAGE_REV=$(charm list-resources cs:~"$NAMESPACE"/"$CHARM" --channel unpublished --format yaml | yq r - [1].revision)
-
-
-    charm release "$URL" --channel "$CHANNEL" --resource "$MULTUS_IMAGE_NAME"-"$MULTUS_IMAGE_REV" --resource "$NET_ATTACH_IMAGE_NAME"-"$NET_ATTACH_IMAGE_REV"
+    charm release "$URL" --channel "$CHANNEL" --resource "$NADF-image-$NADF_IMAGE_REV" --resource "multus-image-$MULTUS_IMAGE_REV"
+    echo "Released to: $CHANNEL"
 fi
