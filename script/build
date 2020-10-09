@@ -1,10 +1,15 @@
 #!/bin/bash
+set -eu
 
-set -x
+export PATH=/snap/bin:$PATH
 
-docker pull nfvpe/multus:v3.4
-cd net-attach-def-manager
-./build
-cd ..
+mkdir -p "$CHARM_BUILD_DIR"
 
-$HOME/.local/bin/charmcraft build
+CHARM_SRC="$(realpath .)"
+
+echo "Building net-attach-def-manager image..."
+(cd net-attach-def-manager/; ./build)
+
+echo "Building $CHARM..."
+(cd "$CHARM_BUILD_DIR" && charmcraft build -f "$CHARM_SRC" 2>&1) | sed -e "s,in ',in '$CHARM_BUILD_DIR/,"
+exit "${PIPESTATUS[0]}"

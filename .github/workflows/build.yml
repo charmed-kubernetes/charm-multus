@@ -6,6 +6,16 @@ jobs:
     name: Build charm
     runs-on: ubuntu-latest
     steps:
+      - name: Fix global gitconfig for confined snap
+        run: |
+          # GH automatically includes the git-lfs plugin and configures it in
+          # /etc/gitconfig.  However, the confinement of the charmcraft snap
+          # means that it can see that this file exists but cannot read it, even
+          # if the file permissions should allow it; this breaks git usage within
+          # the snap. To get around this, we move it from the global gitconfig to
+          # the user's .gitconfig file.
+          cat /etc/gitconfig >> $HOME/.gitconfig
+          sudo rm /etc/gitconfig
       - uses: actions/checkout@v2
       - name: Setup Python 3.8
         uses: actions/setup-python@v2
