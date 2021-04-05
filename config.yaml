@@ -1,4 +1,12 @@
 options:
+  debug:
+    type: boolean
+    default: False
+    description: |
+      Set it to enable LogLevel=debug and reload debug image for containers.
+      Access kube-multus for debug with:
+      kubectl exec -n <model-name> -it <pod-name> -- bash
+      $ dlv attach --continue <PID>
   network-attachment-definitions:
     type: string
     default: ''

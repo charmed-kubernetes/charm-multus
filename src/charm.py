@@ -15,6 +15,7 @@ class MultusCharm(CharmBase):
     def __init__(self, framework, key):
         super().__init__(framework, key)
         self.multus_image = OCIImageResource(self, 'multus-image')
+        self.multus_dbg_image = OCIImageResource(self, 'multus-debug-image')
         self.nadm_image = OCIImageResource(self,
                                            'net-attach-def-manager-image')
         self.framework.observe(self.on.install, self.set_pod_spec)
@@ -28,7 +29,11 @@ class MultusCharm(CharmBase):
             return
 
         try:
-            multus_image_details = self.multus_image.fetch()
+            multus_image_details = None
+            if self.model.config.get('debug'):
+                multus_image_details = self.multus_dbg_image.fetch()
+            else:
+                multus_image_details = self.multus_image.fetch()
             nadm_image_details = self.nadm_image.fetch()
         except OCIImageResourceError as e:
             self.model.unit.status = e.status

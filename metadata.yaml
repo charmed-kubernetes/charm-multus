@@ -16,7 +16,9 @@ resources:
   multus-image:
     type: oci-image
     description: 'Multus image'
-    upstream-source: nfvpe/multus:v3.4
+  multus-debug-image:
+    type: oci-image
+    description: 'Multus image with debug info'
   net-attach-def-manager-image:
     type: oci-image
     description: 'net-attach-def-manager image'

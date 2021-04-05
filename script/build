@@ -7,6 +7,11 @@ CHARM_SRC="$(realpath .)"
 
 echo "Building net-attach-def-manager image..."
 (cd net-attach-def-manager/; ./build)
+echo "Building net-attach-def-manager image..."
+(cd multus/; ./build)
+echo "multus-debug image..."
+(cd multus-debug/; ./build)
+
 
 echo "Building $CHARM..."
 (cd "$CHARM_BUILD_DIR" && charmcraft build -f "$CHARM_SRC" 2>&1) | sed -e "s,in ',in '$CHARM_BUILD_DIR/,"
