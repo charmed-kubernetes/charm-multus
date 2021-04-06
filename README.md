@@ -26,4 +26,9 @@ That will build the multus.charm file and all container images will be on docker
 Push the charm with the images to the charmstore.
 
 $ export NAMESPACE=<namespace-to-be-used-on-charmstore>
+$ export CHANNEL=<as defined on: https://discourse.charmhub.io/t/the-juju-charm-store/1045>
 $ make upload
+
+Once the upload is finished, give access to your charm with:
+
+$ charm grant <charm-url> <users or anyone keyword>

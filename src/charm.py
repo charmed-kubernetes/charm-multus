@@ -77,6 +77,13 @@ class MultusCharm(CharmBase):
         for net_attach_def in net_attach_defs:
             net_attach_def['metadata'].setdefault('namespace', self.model.name)
 
+        kube_multus_args = [
+            '--multus-conf-file=auto',
+            '--cni-version=0.3.1'
+        ]
+        if self.model.config.get('debug'):
+            kube_multus_args.append('--multus-log-level=debug')
+
         self.model.unit.status = MaintenanceStatus('Setting pod spec')
         pod_spec = {
             'version': 3,
@@ -85,10 +92,7 @@ class MultusCharm(CharmBase):
                     'name': 'kube-multus',
                     'imageDetails': multus_image_details,
                     'command': ['/entrypoint.sh'],
-                    'args': [
-                        '--multus-conf-file=auto',
-                        '--cni-version=0.3.1'
-                    ],
+                    'args': kube_multus_args,
                     'volumeConfig': [
                         {
                             'name': 'cni',

@@ -5,7 +5,9 @@ if ! charm whoami > /dev/null; then
     echo "Not logged into charm store" 2>&1
     exit 1
 fi
-URL=$(charm push "$CHARM_BUILD_DIR/$CHARM.charm" "cs:~$NAMESPACE/$CHARM" | yq r - url)
+
+
+URL=$(charm push "$CHARM_BUILD_DIR/$CHARM.charm" "cs:~$NAMESPACE/$CHARM" |  yq -r .url)
 echo "Uploaded: $URL"
 
 NADF="net-attach-def-manager"
@@ -22,6 +24,6 @@ echo "Attached: $MULTUS_DEBUG-image-$MULTUS_DEBUG_IMAGE_REV"
 
 
 if [ "$CHANNEL" != unpublished ]; then
-    charm release "$URL" --channel "$CHANNEL" --resource "$NADF-image-$NADF_IMAGE_REV" --resource "multus-image-$MULTUS_IMAGE_REV"
+    charm release "$URL" --channel "$CHANNEL" --resource "$NADF-image-$NADF_IMAGE_REV" --resource "multus-image-$MULTUS_IMAGE_REV" --resource "multus-debug-image-$MULTUS_DEBUG_IMAGE_REV"
     echo "Released to: $CHANNEL"
 fi
