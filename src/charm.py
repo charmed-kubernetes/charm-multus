@@ -161,23 +161,32 @@ class MultusCharm(CharmBase):
                         'versions': [{
                             'name': 'v1',
                             'served': True,
-                            'storage': True
-                        }],
-                        'validation': {
-                            'openAPIV3Schema': {
-                                'type': 'object',
-                                'properties': {
-                                    'spec': {
-                                        'type': 'object',
-                                        'properties': {
-                                            'config': {
-                                                'type': 'string'
+                            'storage': True,
+                            'schema': {
+                                'openAPIV3Schema': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'apiVersion': {
+                                            'type': 'string'
+                                        },
+                                        'kind': {
+                                            'type': 'string'
+                                        },
+                                        'metadata': {
+                                            'type': 'object'
+                                        },
+                                        'spec': {
+                                            'type': 'object',
+                                            'properties': {
+                                                'config': {
+                                                    'type': 'string'
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
+                        }],
                     }
                 }]
             }
