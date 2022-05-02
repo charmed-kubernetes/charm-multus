@@ -34,6 +34,6 @@ To contribute code to this project, please use the following workflow:
 ## Documentation
 
 Documentation for this charm is currently maintained as part of the Charmed Kubernetes docs.
-See [this page](https://github.com/charmed-kubernetes/kubernetes-docs/blob/master/pages/k8s/cni-multus.md).
+See [this page](https://charmhub.io/multus/docs).
 
 [submit a bug]: https://bugs.launchpad.net/charm-multus/+filebug
