@@ -9,7 +9,7 @@ make charm
 Deploy Charmed Kubernetes with Ceph:
 ```
 wget https://raw.githubusercontent.com/charmed-kubernetes/bundle/main/overlays/ceph-rbd.yaml
-juju deploy cs:charmed-kubernetes --overlay ceph-rbd.yaml
+juju deploy charmed-kubernetes --overlay ceph-rbd.yaml
 ```
 
 Add k8s to Juju controller:
