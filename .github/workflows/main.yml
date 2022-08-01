@@ -9,23 +9,7 @@ jobs:
       fail-on-error: "true"
 
   lint-unit:
-    name: Lint, Unit
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python:
-          - "3.7" 
-          - "3.8"
-          - "3.9"
-          - "3.10"
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v3
-    - name: Setup Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: ${{ matrix.python }}
-    - name: Install Dependencies
-      run: pip install tox
-    - name: Lint
-      run: tox -vve lint
+    name: Lint Unit
+    uses: charmed-kubernetes/workflows/.github/workflows/lint-unit.yaml@main
+    needs:
+      - call-inclusive-naming-check
