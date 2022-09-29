@@ -1,4 +1,8 @@
 options:
+  release:
+    default: v3.9.1
+    description: Version of Multus CNI to deploy
+    type: string
   network-attachment-definitions:
     type: string
     default: ''

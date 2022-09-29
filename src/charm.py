@@ -1,180 +1,95 @@
 #!/usr/bin/env python3
+# Copyright 2022 Canonical Ltd.
+# See LICENSE file for licensing details.
+#
+# Learn more at: https://juju.is/docs/sdk
 
 import logging
-from oci_image import OCIImageResource, OCIImageResourceError
-from ops.charm import CharmBase
-from ops.main import main
-from ops.model import ActiveStatus, MaintenanceStatus, BlockedStatus
-import traceback
-import yaml
 
-log = logging.getLogger()
+from ops.charm import CharmBase
+from ops.framework import StoredState
+from ops.main import main
+from ops.manifests import Collector
+from ops.model import ActiveStatus, WaitingStatus
+
+from manifests import MultusManifests
+from net_attach_definitions import NetworkAttachDefinitions
+
+log = logging.getLogger(__name__)
 
 
 class MultusCharm(CharmBase):
-    def __init__(self, framework, key):
-        super().__init__(framework, key)
-        self.multus_image = OCIImageResource(self, "multus-image")
-        self.nadm_image = OCIImageResource(self, "net-attach-def-manager-image")
-        self.framework.observe(self.on.install, self.set_pod_spec)
-        self.framework.observe(self.on.upgrade_charm, self.set_pod_spec)
-        self.framework.observe(self.on.config_changed, self.set_pod_spec)
+    """A Juju charm for Multus CNI"""
 
-    def set_pod_spec(self, event):
-        if not self.model.unit.is_leader():
-            log.info("Not a leader, skipping set_pod_spec")
-            self.model.unit.status = ActiveStatus()
-            return
+    stored = StoredState()
 
-        try:
-            multus_image_details = self.multus_image.fetch()
-            nadm_image_details = self.nadm_image.fetch()
-        except OCIImageResourceError as e:
-            self.model.unit.status = e.status
-            return
-
-        net_attach_defs_str = self.model.config.get("network-attachment-definitions", "")
-        invalid_net_attach_def_status = BlockedStatus(
-            "network-attachment-definitions config is invalid, see debug-log"
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.manifests = MultusManifests(self, self.config)
+        self.collector = Collector(self.manifests)
+        self.nad_manager = NetworkAttachDefinitions(self.manifests.client)
+        self.stored.set_default(
+            deployed=False,
         )
-        try:
-            net_attach_defs = list(yaml.safe_load_all(net_attach_defs_str))
-        except yaml.YAMLError:
-            log.error(traceback.format_exc())
-            self.model.unit.status = invalid_net_attach_def_status
+
+        self.framework.observe(self.on.install, self._install_or_upgrade)
+        self.framework.observe(self.on.upgrade_charm, self._install_or_upgrade)
+        self.framework.observe(self.on.config_changed, self._on_config_changed)
+        self.framework.observe(self.on.remove, self._on_remove)
+
+        self.framework.observe(self.on.list_versions_action, self._list_versions)
+        self.framework.observe(self.on.list_resources_action, self._list_resources)
+        self.framework.observe(self.on.scrub_resources_action, self._scrub_resources)
+        self.framework.observe(
+            self.on.scrub_net_attach_defs_action, self._scrub_net_attach_defs
+        )
+        self.framework.observe(self.on.update_status, self._update_status)
+
+    def _scrub_net_attach_defs(self, _):
+        self.nad_manager.scrub_resources()
+
+    def _on_config_changed(self, _):
+        na_definitions = self.config.get("network-attachment-definitions")
+        if na_definitions:
+            self.nad_manager.apply_manifests(na_definitions)
+
+    def _list_versions(self, event):
+        self.collector.list_versions(event)
+
+    def _list_resources(self, event):
+        resources = event.params.get("resources", "")
+        return self.collector.list_resources(event, resources=resources)
+
+    def _scrub_resources(self, event):
+        resources = event.params.get("resources", "")
+        return self.collector.scrub_resources(event, resources=resources)
+
+    def _update_status(self, _):
+        if not self.stored.deployed:
             return
 
-        for net_attach_def in net_attach_defs:
-            if net_attach_def.get("apiVersion") != "k8s.cni.cncf.io/v1":
-                log.error(
-                    "network-attachment-definitions config is invalid:"
-                    + " apiVersion must be k8s.cni.cncf.io/v1"
-                )
-                self.model.unit.status = invalid_net_attach_def_status
-                return
-            if net_attach_def.get("kind") != "NetworkAttachmentDefinition":
-                log.error(
-                    "network-attachment-definitions config is invalid:"
-                    + " kind must be NetworkAttachmentDefinition"
-                )
-                self.model.unit.status = invalid_net_attach_def_status
-                return
-            if not net_attach_def.get("metadata", {}).get("name"):
-                log.error(
-                    "network-attachment-definitions config is invalid:"
-                    + " metadata.name is required"
-                )
-                self.model.unit.status = invalid_net_attach_def_status
-                return
-            if not net_attach_def.get("spec", {}).get("config"):
-                log.error(
-                    "network-attachment-definitions config is invalid:"
-                    + " spec.config is required"
-                )
-                self.model.unit.status = invalid_net_attach_def_status
-                return
+        unready = self.collector.unready
+        if unready:
+            self.unit.status = WaitingStatus(", ".join(unready))
+        else:
+            self.unit.status = ActiveStatus("Ready")
+            self.unit.set_workload_version(self.collector.short_version)
+            self.app.status = ActiveStatus(self.collector.long_version)
 
-        for net_attach_def in net_attach_defs:
-            net_attach_def["metadata"].setdefault("namespace", self.model.name)
+    def _install_or_upgrade(self, event):
+        if not self.unit.is_leader():
+            return
+        log.info("Applying Multus manifests")
+        self.manifests.apply_manifests()
+        self.stored.deployed = True
+        self._update_status(event)
 
-        self.model.unit.status = MaintenanceStatus("Setting pod spec")
-        pod_spec = {
-            "version": 3,
-            "containers": [
-                {
-                    "name": "kube-multus",
-                    "imageDetails": multus_image_details,
-                    "command": ["/entrypoint.sh"],
-                    "args": ["--multus-conf-file=auto", "--cni-version=0.3.1"],
-                    "volumeConfig": [
-                        {
-                            "name": "cni",
-                            "mountPath": "/host/etc/cni/net.d",
-                            "hostPath": {"path": "/etc/cni/net.d"},
-                        },
-                        {
-                            "name": "cnibin",
-                            "mountPath": "/host/opt/cni/bin",
-                            "hostPath": {"path": "/opt/cni/bin"},
-                        },
-                    ],
-                    "kubernetes": {"securityContext": {"privileged": True}},
-                },
-                {
-                    "name": "net-attach-def-manager",
-                    "imageDetails": nadm_image_details,
-                    "volumeConfig": [
-                        {
-                            "name": "config",
-                            "mountPath": "/config",
-                            "files": [
-                                {
-                                    "path": "manifest.yaml",
-                                    "content": yaml.safe_dump_all(net_attach_defs) or "# empty",
-                                }
-                            ],
-                        }
-                    ],
-                },
-            ],
-            "serviceAccount": {
-                "roles": [
-                    {
-                        "global": True,
-                        "rules": [
-                            {"apiGroups": ["k8s.cni.cncf.io"], "resources": ["*"], "verbs": ["*"]},
-                            {
-                                "apiGroups": [""],
-                                "resources": ["pods", "pods/status"],
-                                "verbs": ["get", "update"],
-                            },
-                        ],
-                    }
-                ]
-            },
-            "kubernetesResources": {
-                "pod": {"hostNetwork": True},
-                "customResourceDefinitions": [
-                    {
-                        "name": "network-attachment-definitions.k8s.cni.cncf.io",
-                        "spec": {
-                            "group": "k8s.cni.cncf.io",
-                            "scope": "Namespaced",
-                            "names": {
-                                "plural": "network-attachment-definitions",
-                                "singular": "network-attachment-definition",
-                                "kind": "NetworkAttachmentDefinition",
-                                "shortNames": ["net-attach-def"],
-                            },
-                            "versions": [
-                                {
-                                    "name": "v1",
-                                    "served": True,
-                                    "storage": True,
-                                    "schema": {
-                                        "openAPIV3Schema": {
-                                            "type": "object",
-                                            "properties": {
-                                                "apiVersion": {"type": "string"},
-                                                "kind": {"type": "string"},
-                                                "metadata": {"type": "object"},
-                                                "spec": {
-                                                    "type": "object",
-                                                    "properties": {"config": {"type": "string"}},
-                                                },
-                                            },
-                                        }
-                                    },
-                                }
-                            ],
-                        },
-                    }
-                ],
-            },
-        }
-        self.model.pod.set_spec(pod_spec)
-        self.model.unit.status = ActiveStatus()
+    def _on_remove(self, _):
+        log.info("Removing Network Attachment Definitions")
+        self.nad_manager.remove_resources()
+        log.info("Removing Multus manifests")
+        self.manifests.delete_manifests(ignore_unauthorized=True, ignore_not_found=True)
 
 
 if __name__ == "__main__":
-    main(MultusCharm)
+    main(MultusCharm)  # pragma: no cover

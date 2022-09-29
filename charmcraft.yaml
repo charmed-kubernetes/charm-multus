@@ -1,6 +1,10 @@
-# Architectures based on supported arch's in upstream
-# https://github.com/k8snetworkplumbingwg/multus-cni/blob/70c970cd6e543cffc043728558652f7402364b28/.github/workflows/image-build.yml
-type: charm
+type: "charm"
+parts:
+  charm:
+    build-packages: [git]
+    prime:
+      - upstream/**
+      - schemas/**
 bases:
   - build-on:
     - name: "ubuntu"

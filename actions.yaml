@@ -1,0 +1,20 @@
+list-versions:
+  description: List Multus CNI Versions supported by this charm
+list-resources:
+  description: List Multus CNI Resources of configured version
+  params:
+    resources:
+      type: string
+      default: ""
+      description: |
+        Space separated list of kubernetes resource types to filter list result
+scrub-resources:
+  description: Remove deployments other than the current one
+  params:
+    resources:
+      type: string
+      default: ""
+      description: |
+        Space separated list of kubernetes resource types to filter scrubbing
+scrub-net-attach-defs:
+  description: Remove remnants NetworkAttachmentDefinitions in the cluster
