@@ -42,7 +42,7 @@ async def test_deploy_charm(ops_test, k8s_model):
     with ops_test.model_context(k8s_alias) as model:
         juju_cmd = f"deploy {charm.resolve()} -m {model_name} --trust"
         await ops_test.juju(*shlex.split(juju_cmd), fail_msg="Deploy charm failed")
-        
+
         await model.block_until(lambda: "multus" in model.applications, timeout=60 * 3)
         await model.wait_for_idle(status="active", timeout=60 * 5)
 
