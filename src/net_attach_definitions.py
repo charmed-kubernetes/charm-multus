@@ -2,7 +2,6 @@
 # See LICENSE file for licensing details.
 """Module for managing Network Attachment Definitions"""
 import logging
-from functools import cached_property
 from typing import List, Set
 
 import yaml
@@ -36,7 +35,7 @@ class NetworkAttachDefinitions:
             "network-attachment-definitions",
         )
 
-    @cached_property
+    @property
     def schema(self) -> dict:
         """Load the NetworkAttachmentDefinition validation schema"""
         try:
