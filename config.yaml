@@ -1,4 +1,11 @@
 options:
+  image-registry:
+    default: rocks.canonical.com:443/cdk
+    type: string
+    description: |
+      Source registry of Multus CNI images.
+      By setting to a value, each image listed in the releases manifest
+      has its image-registry replaced.
   release:
     default: v3.9.1
     description: Version of Multus CNI to deploy

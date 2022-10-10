@@ -1,5 +1,5 @@
 import logging
-from contextlib import nullcontext as does_not_raise
+import unittest.mock as mock
 from unittest.mock import call
 
 import pytest
@@ -8,7 +8,7 @@ from lightkube.models.meta_v1 import ObjectMeta
 from lightkube.resources.core_v1 import Pod
 from ops.manifests.manipulations import HashableResource
 
-from net_attach_definitions import NetworkAttachDefinitions
+from net_attach_definitions import NetworkAttachDefinitions, ValidationError
 
 VALID_YAML = """apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition
@@ -53,14 +53,13 @@ spec:
     "context_raised,manifest",
     [
         pytest.param(
-            pytest.raises(NetworkAttachDefinitions.ValidationError),
+            pytest.raises(ValidationError),
             INVALID_YAML,
             id="Invalid Manifest",
         ),
         pytest.param(
             pytest.raises(yaml.YAMLError), "{NOT,A,\tYAML}", id="Invalid YAML"
         ),
-        pytest.param(does_not_raise(), VALID_YAML, id="Valid YAML"),
     ],
 )
 def test_validate_manifests(context_raised, manifest):
@@ -72,14 +71,9 @@ def test_validate_manifests(context_raised, manifest):
     "context_raised,manifest",
     [
         pytest.param(
-            pytest.raises(NetworkAttachDefinitions.ValidationError),
+            pytest.raises(ValidationError),
             INVALID_YAML,
             id="Invalid Manifest",
-        ),
-        pytest.param(
-            does_not_raise(),
-            VALID_YAML,
-            id="Valid YAML",
         ),
     ],
 )
@@ -147,7 +141,7 @@ def test_scrub_resources(lk_nad_client, installed, resources, log_message, caplo
 
 def test_remove_resources(lk_nad_client):
     mock_list = lk_nad_client.list
-    mock_delete = lk_nad_client.delete
+    mock_delete: mock.MagicMock = lk_nad_client.delete
     resources = [
         Pod(
             kind="Pod",
@@ -161,17 +155,12 @@ def test_remove_resources(lk_nad_client):
         call(type(rsc), rsc.metadata.name, namespace=rsc.metadata.namespace)
         for rsc in resources
     ]
-    mock_delete.assert_has_calls(calls)
+    mock_delete.assert_has_calls(calls, any_order=True)
 
 
 @pytest.mark.parametrize(
     "manifest,log_message",
     [
-        pytest.param(
-            INVALID_YAML,
-            "Error validating NetworkAttachmentDefinitions: ",
-            id="Invalid Manifest",
-        ),
         pytest.param(
             VALID_YAML,
             "Applied 1 NetworkAttachmentDefinitions",
@@ -185,19 +174,67 @@ def test_apply_manifests(manifest, log_message, caplog):
         assert log_message in caplog.text
 
 
+@pytest.mark.parametrize(
+    "context_raised,manifest",
+    [
+        pytest.param(
+            pytest.raises(ValidationError),
+            INVALID_YAML,
+            id="Invalid Manifest",
+        ),
+        pytest.param(
+            pytest.raises(yaml.YAMLError),
+            "{NOT,A,\tYAML}",
+            id="Invalid YAML",
+        ),
+    ],
+)
+def test_apply_manifests_raises(context_raised, manifest):
+    with context_raised:
+        NetworkAttachDefinitions().apply_manifests(manifest)
+
+
 def test_remove_resources_api_error(api_error_class, lk_nad_client, caplog):
     lk_nad_client.list.side_effect = api_error_class()
-    NetworkAttachDefinitions().remove_resources()
-    assert "Failed to get Network Attachment Definitions" in caplog.text
+    with pytest.raises(api_error_class):
+        NetworkAttachDefinitions().remove_resources()
+        assert "Failed to get Network Attachment Definitions" in caplog.text
 
 
 def test_scrub_resources_api_error(api_error_class, lk_nad_client, caplog):
     lk_nad_client.list.side_effect = api_error_class()
-    NetworkAttachDefinitions().scrub_resources()
-    assert "Failed to get Network Attachment Definitions" in caplog.text
+    with pytest.raises(api_error_class):
+        NetworkAttachDefinitions().remove_resources()
+        assert "Failed to get Network Attachment Definitions" in caplog.text
+
+
+def test_delete_resources_api_error(api_error_class, lk_nad_client, caplog):
+    lk_nad_client.delete.side_effect = api_error_class()
+    with pytest.raises(api_error_class):
+        resources = [
+            HashableResource(
+                Pod(
+                    kind="Pod",
+                    metadata=ObjectMeta(name=f"pod-{n}", namespace="mock-ns"),
+                )
+            )
+            for n in range(5)
+        ]
+        NetworkAttachDefinitions()._delete_resources(resources)
+        assert "Retrying..." in caplog.text
 
 
 def test_apply_manifests_api_error(api_error_class, lk_nad_client, caplog):
     lk_nad_client.apply.side_effect = api_error_class()
-    NetworkAttachDefinitions().apply_manifests(VALID_YAML)
-    assert "Failed applying" in caplog.text
+    with pytest.raises(api_error_class):
+        NetworkAttachDefinitions().apply_manifests(VALID_YAML)
+        assert "Failed applying" in caplog.text
+
+
+@mock.patch("yaml.safe_load")
+def test_schema_not_found(mock_safe, caplog):
+    mock_safe.side_effect = yaml.YAMLError("Error")
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(yaml.YAMLError):
+            NetworkAttachDefinitions().schema
+            assert "Failed reading validation schema" in caplog.text

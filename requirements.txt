@@ -1,4 +1,5 @@
 ops
 lightkube
 cerberus
+tenacity
 git+https://github.com/canonical/ops-lib-manifest.git@main

@@ -1,13 +1,11 @@
 from typing import Dict
 
-from ops.manifests import ManifestLabel, Manifests
+from ops.manifests import ConfigRegistry, ManifestLabel, Manifests
 
 
 class MultusManifests(Manifests):
     def __init__(self, charm, charm_config):
-        manipulations = [
-            ManifestLabel(self),
-        ]
+        manipulations = [ManifestLabel(self), ConfigRegistry(self)]
 
         super().__init__("multus", charm.model, "upstream/multus", manipulations)
         self.charm_config = charm_config

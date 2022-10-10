@@ -8,10 +8,12 @@ import unittest.mock as mock
 import ops.testing
 import pytest
 from conftest import MockActionEvent
-from ops.model import ActiveStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import Harness
+from yaml import YAMLError
 
 from charm import MultusCharm
+from net_attach_definitions import ValidationError
 
 ops.testing.SIMULATE_CAN_CONNECT = True
 
@@ -51,25 +53,50 @@ def harness():
         harness.cleanup()
 
 
-@mock.patch("net_attach_definitions.NetworkAttachDefinitions.scrub_resources")
-def test_scrub_net_attach_defs(mock_scrub, harness):
+@pytest.fixture
+def charm(harness):
     harness.begin_with_initial_hooks()
-    harness.charm._scrub_net_attach_defs("mock_event")
+    yield harness.charm
+
+
+@mock.patch("net_attach_definitions.NetworkAttachDefinitions.scrub_resources")
+def test_scrub_net_attach_defs(mock_scrub, charm):
+    charm._scrub_net_attach_defs("mock_event")
     mock_scrub.assert_called_once()
 
 
 @pytest.mark.parametrize(
-    "config_value",
-    [pytest.param(TEST_NAD, id="Config set"), pytest.param("", id="No config")],
+    "config_value,stored_value",
+    [
+        pytest.param(TEST_NAD, "", id="Create new NADs"),
+        pytest.param("", TEST_NAD, id="Remove NADs"),
+        pytest.param("", "", id="No change"),
+    ],
 )
 @mock.patch("net_attach_definitions.NetworkAttachDefinitions.apply_manifests")
-def test_on_config_changed(mock_apply, harness, config_value):
-    harness.begin_with_initial_hooks()
+def test_on_config_changed(mock_apply, harness, charm, config_value, stored_value):
+    charm.stored.nad_manifest = stored_value
     harness.update_config({"network-attachment-definitions": config_value})
-    if config_value:
+    if config_value or stored_value:
         mock_apply.assert_called_once_with(config_value)
+        assert isinstance(charm.unit.status, ActiveStatus)
     else:
         mock_apply.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "side_effect",
+    [
+        pytest.param(YAMLError("Error"), id="Invalid YAML"),
+        pytest.param(ValidationError("Error"), id="Invalid Manifest"),
+    ],
+)
+@mock.patch("net_attach_definitions.NetworkAttachDefinitions.apply_manifests")
+def test_on_config_changed_raises(mock_apply, harness, charm, side_effect):
+    mock_apply.side_effect = side_effect
+    harness.set_leader()
+    harness.update_config({"network-attachment-definitions": "\tNOT A YAML!"})
+    assert isinstance(charm.unit.status, BlockedStatus)
 
 
 @pytest.mark.parametrize("deployed", [True, False])

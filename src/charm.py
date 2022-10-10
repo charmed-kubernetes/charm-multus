@@ -6,14 +6,16 @@
 
 import logging
 
+from lightkube.core.exceptions import ApiError
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
 from ops.manifests import Collector
-from ops.model import ActiveStatus, WaitingStatus
+from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from yaml import YAMLError
 
 from manifests import MultusManifests
-from net_attach_definitions import NetworkAttachDefinitions
+from net_attach_definitions import NetworkAttachDefinitions, ValidationError
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +31,8 @@ class MultusCharm(CharmBase):
         self.collector = Collector(self.manifests)
         self.nad_manager = NetworkAttachDefinitions(self.manifests.client)
         self.stored.set_default(
+            nad_manifest="",  # Store previous NAD manifest
+            blocked=False,  # Store Blocked Status
             deployed=False,
         )
 
@@ -45,13 +49,31 @@ class MultusCharm(CharmBase):
         )
         self.framework.observe(self.on.update_status, self._update_status)
 
-    def _scrub_net_attach_defs(self, _):
-        self.nad_manager.scrub_resources()
+    def _scrub_net_attach_defs(self, event):
+        try:
+            self.nad_manager.scrub_resources()
+            msg = "Successfully scrubbed resources from the cluster."
+            event.set_results({"result": msg})
+        except ApiError as e:
+            event.fail(f"Failed to scrub net-attach-defs from the cluster: {e}")
 
-    def _on_config_changed(self, _):
+    def _on_config_changed(self, event):
+        current_nads = self.stored.nad_manifest
         na_definitions = self.config.get("network-attachment-definitions")
-        if na_definitions:
-            self.nad_manager.apply_manifests(na_definitions)
+
+        if current_nads != na_definitions:
+            self.unit.status = WaitingStatus("Applying Network Attachment Definitions.")
+            try:
+                self.nad_manager.apply_manifests(na_definitions)
+                self.stored.nad_manifest = na_definitions
+                self.unit.status = ActiveStatus("Ready")
+                self.stored.blocked = False
+            except (YAMLError, ValidationError):
+                self.stored.blocked = True
+            except ApiError as e:
+                log.error(f"Failed to net-attach-def manifests: {e}")
+
+        self._install_or_upgrade(event)
 
     def _list_versions(self, event):
         self.collector.list_versions(event)
@@ -69,15 +91,22 @@ class MultusCharm(CharmBase):
             return
 
         unready = self.collector.unready
-        if unready:
+        blocked = self.stored.blocked
+
+        if blocked:
+            self.unit.status = BlockedStatus(
+                "Invalid NAD manifests. Check the logs for more information."
+            )
+        elif unready:
             self.unit.status = WaitingStatus(", ".join(unready))
         else:
-            self.unit.status = ActiveStatus("Ready")
             self.unit.set_workload_version(self.collector.short_version)
+            self.unit.status = ActiveStatus("Ready")
             self.app.status = ActiveStatus(self.collector.long_version)
 
     def _install_or_upgrade(self, event):
         if not self.unit.is_leader():
+            self.unit.status = ActiveStatus("Ready")
             return
         log.info("Applying Multus manifests")
         self.manifests.apply_manifests()
@@ -86,7 +115,10 @@ class MultusCharm(CharmBase):
 
     def _on_remove(self, _):
         log.info("Removing Network Attachment Definitions")
-        self.nad_manager.remove_resources()
+        try:
+            self.nad_manager.remove_resources()
+        except ApiError as e:
+            log.error(f"Failed to remove net-attach-defs from the cluster: {e}")
         log.info("Removing Multus manifests")
         self.manifests.delete_manifests(ignore_unauthorized=True, ignore_not_found=True)
 

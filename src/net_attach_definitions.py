@@ -2,15 +2,19 @@
 # See LICENSE file for licensing details.
 """Module for managing Network Attachment Definitions"""
 import logging
+import traceback
 from typing import List, Set
 
 import yaml
 from cerberus import Validator
-from lightkube import Client
-from lightkube.codecs import load_all_yaml
+from lightkube import Client, codecs
 from lightkube.core.exceptions import ApiError
 from lightkube.generic_resource import create_namespaced_resource
 from ops.manifests.manipulations import HashableResource
+from tenacity import retry
+from tenacity.retry import retry_if_exception_type
+from tenacity.stop import stop_after_attempt
+from tenacity.wait import wait_exponential
 
 log = logging.getLogger(__file__)
 
@@ -42,14 +46,21 @@ class NetworkAttachDefinitions:
             with open("schemas/NetworkAttachDefinition.yaml", "r") as f:
                 return yaml.safe_load(f)
         except yaml.YAMLError:
-            log.error("Failed reading validation schema")
+            log.error(f"Failed reading validation schema: {traceback.format_exc()}")
+            raise
 
+    @retry(
+        reraise=True,
+        retry=retry_if_exception_type(ApiError),
+        wait=wait_exponential(max=10),
+        stop=stop_after_attempt(3),
+    )
     def apply_manifests(self, manifests: str) -> None:
         try:
             resources = self._validate_and_load(manifests)
-        except (self.ValidationError, yaml.YAMLError) as e:
+        except (ValidationError, yaml.YAMLError) as e:
             log.error(e)
-            return
+            raise
 
         applied: Set[HashableResource] = set()
         for rsc in resources:
@@ -57,52 +68,83 @@ class NetworkAttachDefinitions:
             try:
                 self.client.apply(rsc.resource, force=True)
                 applied.add(rsc)
-            except ApiError:
-                log.exception(f"Failed applying {rsc}")
-        log.info(f"Applied {len(resources)} NetworkAttachmentDefinitions")
+            except ApiError as e:
+                log.exception(f"Failed applying {rsc}: {e}. Retrying...")
+                raise
+
+        log.info(f"Applied {len(applied)} NetworkAttachmentDefinitions")
         self.resources = applied
         self.scrub_resources()
 
     def remove_resources(self) -> None:
         try:
-            resources = list(self.client.list(self.nad_resource, namespace="*"))
+            resources = self._list_resources()
+            self._delete_resources(resources)
         except ApiError:
-            log.error(
-                "Failed to get Network Attachment Definitions in cluster. "
-                "There may be NADs that couldn't be removed."
-            )
-            return
-        for rsc in resources:
-            self.client.delete(
-                type(rsc), rsc.metadata.name, namespace=rsc.metadata.namespace
-            )
+            raise
+
         log.info(f"Removed {len(resources)} NetworkAttachmentDefinitions")
 
     def scrub_resources(self) -> None:
         try:
-            installed = set(
-                HashableResource(_)
-                for _ in self.client.list(self.nad_resource, namespace="*")
-            )
+            installed = self._list_resources()
+            remnants = installed.difference(self.resources)
+            self._delete_resources(remnants)
         except ApiError:
-            log.error(
-                "Failed to get Network Attachment Definitions in cluster. "
-                "There may be old NADs that couldn't be removed. "
-                "Try again later running the scrub_nads action."
-            )
-            return
-        remnants = installed.difference(self.resources)
-        for r in remnants:
-            self.client.delete(type(r.resource), r.name, namespace=r.namespace)
+            raise
+
         log.info(f"Removed {len(remnants)} NetworkAttachmentDefinitions")
 
+    @retry(
+        reraise=True,
+        retry=retry_if_exception_type(ApiError),
+        wait=wait_exponential(max=10),
+        stop=stop_after_attempt(3),
+    )
+    def _delete_resources(self, resources: Set[HashableResource]):
+        for rsc in resources:
+            try:
+                self.client.delete(
+                    type(rsc.resource), rsc.name, namespace=rsc.namespace
+                )
+            except ApiError as e:
+                log.error(f"Failed to remove {rsc}: {e}. Retrying...")
+                raise
+
     def _load_and_wrap(self, manifests: str) -> List[HashableResource]:
-        return [HashableResource(rsc) for rsc in load_all_yaml(manifests)]
+        resources = list(yaml.safe_load_all(manifests))
+        for rsc in resources:
+            labels = rsc["metadata"].setdefault("labels", {})
+            labels["app.kubernetes.io/managed-by"] = "charm-multus"
+        return [HashableResource(codecs.from_dict(rsc)) for rsc in resources]
+
+    @retry(
+        reraise=True,
+        retry=retry_if_exception_type(ApiError),
+        wait=wait_exponential(max=10),
+        stop=stop_after_attempt(3),
+    )
+    def _list_resources(self):
+        try:
+            resources = set(
+                HashableResource(_)
+                for _ in self.client.list(
+                    self.nad_resource,
+                    labels={"app.kubernetes.io/managed-by": "charm-multus"},
+                    namespace="*",
+                )
+            )
+            return resources
+        except ApiError:
+            log.error(
+                "Failed to get Network Attachment Definitions in cluster. Retrying..."
+            )
+            raise
 
     def _validate_and_load(self, manifests: str) -> List[HashableResource]:
         try:
             self._validate_manifests(manifests)
-        except (self.ValidationError, yaml.YAMLError):
+        except (ValidationError, yaml.YAMLError):
             raise
         return self._load_and_wrap(manifests)
 
@@ -115,19 +157,20 @@ class NetworkAttachDefinitions:
                     errors += yaml.safe_dump(self.validator.errors)
 
             if errors:
-                raise self.ValidationError(errors)
+                raise ValidationError(errors)
         except yaml.YAMLError:
             log.error("Failed to parse NetworkAttachmentDefinitions")
             raise
 
-    class ValidationError(Exception):
-        """Exception to raise for errors in the Validation process
-        for Network Attachment Definitions
-        """
 
-        def __init__(self, message: str):
-            self.message = message
-            super().__init__(self.message)
+class ValidationError(Exception):
+    """Exception to raise for errors in the Validation process
+    for Network Attachment Definitions
+    """
 
-        def __str__(self) -> str:
-            return f"Error validating NetworkAttachmentDefinitions: {self.message}"
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self) -> str:
+        return f"Error validating NetworkAttachmentDefinitions: {self.message}"
