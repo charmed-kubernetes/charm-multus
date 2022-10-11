@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import logging
 import unittest.mock as mock
 
 import ops.testing
@@ -61,7 +62,8 @@ def charm(harness):
 
 @mock.patch("net_attach_definitions.NetworkAttachDefinitions.scrub_resources")
 def test_scrub_net_attach_defs(mock_scrub, charm):
-    charm._scrub_net_attach_defs("mock_event")
+    event = mock.MagicMock()
+    charm._scrub_net_attach_defs(event)
     mock_scrub.assert_called_once()
 
 
@@ -97,6 +99,39 @@ def test_on_config_changed_raises(mock_apply, harness, charm, side_effect):
     harness.set_leader()
     harness.update_config({"network-attachment-definitions": "\tNOT A YAML!"})
     assert isinstance(charm.unit.status, BlockedStatus)
+
+
+@mock.patch("net_attach_definitions.NetworkAttachDefinitions.apply_manifests")
+def test_on_config_changed_api_error(
+    mock_apply, api_error_class, harness, charm, caplog
+):
+    mock_apply.side_effect = api_error_class()
+    harness.set_leader()
+    with caplog.at_level(logging.INFO):
+        charm.stored.nad_manifest = TEST_NAD
+        charm._on_config_changed("mock-event")
+        assert "Failed to apply net-attach-def manifests:" in caplog.text
+
+
+@mock.patch("net_attach_definitions.NetworkAttachDefinitions.scrub_resources")
+def test_scrub_net_attach_defs_api_error(
+    mock_scrub, api_error_class, harness, charm, caplog
+):
+    mock_scrub.side_effect = api_error_class()
+    harness.set_leader()
+    with caplog.at_level(logging.INFO):
+        event = mock.MagicMock()
+        charm._scrub_net_attach_defs(event)
+        assert "Failed to scrub net-attach-defs from the cluster" in caplog.text
+
+
+@mock.patch("net_attach_definitions.NetworkAttachDefinitions.remove_resources")
+def test_on_remove_api_error(mock_remove, api_error_class, harness, charm, caplog):
+    mock_remove.side_effect = api_error_class()
+    harness.set_leader()
+    with caplog.at_level(logging.INFO):
+        charm._on_remove("mock-event")
+        assert "Failed to remove net-attach-defs from the cluster" in caplog.text
 
 
 @pytest.mark.parametrize("deployed", [True, False])

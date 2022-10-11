@@ -204,7 +204,7 @@ def test_remove_resources_api_error(api_error_class, lk_nad_client, caplog):
 def test_scrub_resources_api_error(api_error_class, lk_nad_client, caplog):
     lk_nad_client.list.side_effect = api_error_class()
     with pytest.raises(api_error_class):
-        NetworkAttachDefinitions().remove_resources()
+        NetworkAttachDefinitions().scrub_resources()
         assert "Failed to get Network Attachment Definitions" in caplog.text
 
 

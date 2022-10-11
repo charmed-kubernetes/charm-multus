@@ -55,7 +55,9 @@ class MultusCharm(CharmBase):
             msg = "Successfully scrubbed resources from the cluster."
             event.set_results({"result": msg})
         except ApiError as e:
-            event.fail(f"Failed to scrub net-attach-defs from the cluster: {e}")
+            msg = f"Failed to scrub net-attach-defs from the cluster: {e}"
+            log.error(msg)
+            event.fail(msg)
 
     def _on_config_changed(self, event):
         current_nads = self.stored.nad_manifest
@@ -71,7 +73,7 @@ class MultusCharm(CharmBase):
             except (YAMLError, ValidationError):
                 self.stored.blocked = True
             except ApiError as e:
-                log.error(f"Failed to net-attach-def manifests: {e}")
+                log.error(f"Failed to apply net-attach-def manifests: {e}")
 
         self._install_or_upgrade(event)
 
