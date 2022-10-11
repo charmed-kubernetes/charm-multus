@@ -1,0 +1,21 @@
+apiVersion:
+  required: True
+  type: string
+  allowed: ["k8s.cni.cncf.io/v1"]
+kind:
+  required: True
+  type: string
+  allowed: ["NetworkAttachmentDefinition"]
+metadata:
+  type: dict
+  allow_unknown: True
+  schema:
+    name:
+      type: string
+      required: True
+spec:
+  type: dict
+  schema:
+    config:
+      type: string
+      required: True

@@ -1,0 +1,15 @@
+apiVersion: kubeovn.io/v1
+kind: Subnet
+metadata:
+  name: attachnet
+spec:
+  protocol: IPv4
+  cidrBlock: 10.166.0.0/16
+  default: false
+  excludeIps:
+  - 10.166.0.1
+  gateway: 10.166.0.1
+  gatewayType: distributed
+  natOutgoing: true
+  namespaces:
+  - default

@@ -2,26 +2,9 @@ name: multus
 summary: Multus CNI for Kubernetes
 maintainers:
   - George Kraft <george.kraft@canonical.com>
+  - Mateo Florido <mateo.florido@canonical.com>
 docs: https://discourse.charmhub.io/t/multus-docs/6319
 description: |
   Multus CNI is a container network interface (CNI) plugin for Kubernetes that
   enables attaching multiple network interfaces to pods.
-tags:
-  - misc
-series:
-  - kubernetes
-provides: {}
-requires: {}
-peers: {}
-resources:
-  multus-image:
-    type: oci-image
-    description: 'Multus image'
-    upstream-source: nfvpe/multus:v3.4
-  net-attach-def-manager-image:
-    type: oci-image
-    description: 'net-attach-def-manager image'
-deployment:
-  type: daemon
-  service: omit
-min-juju-version: 2.8-beta1
+
