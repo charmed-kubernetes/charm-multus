@@ -6,12 +6,11 @@
 
 import logging
 
-from lightkube.core.exceptions import ApiError
 from ops.charm import CharmBase
 from ops.framework import StoredState
 from ops.main import main
-from ops.manifests import Collector
-from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
+from ops.manifests import Collector, ManifestClientError
+from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus, WaitingStatus
 from yaml import YAMLError
 
 from manifests import MultusManifests
@@ -54,7 +53,7 @@ class MultusCharm(CharmBase):
             self.nad_manager.scrub_resources()
             msg = "Successfully scrubbed resources from the cluster."
             event.set_results({"result": msg})
-        except ApiError as e:
+        except ManifestClientError as e:
             msg = f"Failed to scrub net-attach-defs from the cluster: {e}"
             log.error(msg)
             event.fail(msg)
@@ -72,7 +71,7 @@ class MultusCharm(CharmBase):
                 self.stored.blocked = False
             except (YAMLError, ValidationError):
                 self.stored.blocked = True
-            except ApiError as e:
+            except ManifestClientError as e:
                 log.error(f"Failed to apply net-attach-def manifests: {e}")
 
         self._install_or_upgrade(event)
@@ -111,18 +110,29 @@ class MultusCharm(CharmBase):
             self.unit.status = ActiveStatus("Ready")
             return
         log.info("Applying Multus manifests")
-        self.manifests.apply_manifests()
+        try:
+            self.manifests.apply_manifests()
+        except ManifestClientError:
+            self.unit.status = WaitingStatus("Waiting for kube-apiserver")
+            event.defer()
+            return
         self.stored.deployed = True
         self._update_status(event)
 
-    def _on_remove(self, _):
+    def _on_remove(self, event):
         log.info("Removing Network Attachment Definitions")
         try:
             self.nad_manager.remove_resources()
-        except ApiError as e:
+            log.info("Removing Multus manifests")
+            self.manifests.delete_manifests(
+                ignore_unauthorized=True, ignore_not_found=True
+            )
+        except ManifestClientError as e:
             log.error(f"Failed to remove net-attach-defs from the cluster: {e}")
-        log.info("Removing Multus manifests")
-        self.manifests.delete_manifests(ignore_unauthorized=True, ignore_not_found=True)
+            self.unit.status = WaitingStatus("Waiting for kube-apiserver")
+            event.defer()
+            return
+        self.unit.status = MaintenanceStatus("Shutting down")
 
 
 if __name__ == "__main__":
