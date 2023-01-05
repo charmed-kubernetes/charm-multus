@@ -3,7 +3,6 @@ import logging
 import re
 import shlex
 import time
-from pathlib import Path
 
 import pytest
 
