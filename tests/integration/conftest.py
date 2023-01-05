@@ -189,6 +189,10 @@ async def k8s_model(k8s_cloud, ops_test: OpsTest):
     model_uuid = model.info.uuid
     yield model, model_alias, model_name
     timeout = 10 * 60
+
+    if multus_app := model.applications.get("multus"):
+        await multus_app.destroy(force=True)
+
     await ops_test.forget_model(model_alias, timeout=timeout, allow_failure=False)
 
     async def model_removed():
