@@ -8,8 +8,8 @@ from typing import List, Set
 import yaml
 from cerberus import Validator
 from lightkube import Client, codecs
-from lightkube.core.exceptions import ApiError
 from lightkube.generic_resource import create_namespaced_resource
+from ops.manifests import ManifestClientError
 from ops.manifests.manipulations import HashableResource
 from tenacity import retry
 from tenacity.retry import retry_if_exception_type
@@ -51,7 +51,7 @@ class NetworkAttachDefinitions:
 
     @retry(
         reraise=True,
-        retry=retry_if_exception_type(ApiError),
+        retry=retry_if_exception_type(ManifestClientError),
         wait=wait_exponential(max=10),
         stop=stop_after_attempt(3),
     )
@@ -68,7 +68,7 @@ class NetworkAttachDefinitions:
             try:
                 self.client.apply(rsc.resource, force=True)
                 applied.add(rsc)
-            except ApiError as e:
+            except ManifestClientError as e:
                 log.exception(f"Failed applying {rsc}: {e}. Retrying...")
                 raise
 
@@ -80,7 +80,7 @@ class NetworkAttachDefinitions:
         try:
             resources = self._list_resources()
             self._delete_resources(resources)
-        except ApiError:
+        except ManifestClientError:
             raise
 
         log.info(f"Removed {len(resources)} NetworkAttachmentDefinitions")
@@ -90,14 +90,14 @@ class NetworkAttachDefinitions:
             installed = self._list_resources()
             remnants = installed.difference(self.resources)
             self._delete_resources(remnants)
-        except ApiError:
+        except ManifestClientError:
             raise
 
         log.info(f"Removed {len(remnants)} NetworkAttachmentDefinitions")
 
     @retry(
         reraise=True,
-        retry=retry_if_exception_type(ApiError),
+        retry=retry_if_exception_type(ManifestClientError),
         wait=wait_exponential(max=10),
         stop=stop_after_attempt(3),
     )
@@ -107,7 +107,7 @@ class NetworkAttachDefinitions:
                 self.client.delete(
                     type(rsc.resource), rsc.name, namespace=rsc.namespace
                 )
-            except ApiError as e:
+            except ManifestClientError as e:
                 log.error(f"Failed to remove {rsc}: {e}. Retrying...")
                 raise
 
@@ -120,7 +120,7 @@ class NetworkAttachDefinitions:
 
     @retry(
         reraise=True,
-        retry=retry_if_exception_type(ApiError),
+        retry=retry_if_exception_type(ManifestClientError),
         wait=wait_exponential(max=10),
         stop=stop_after_attempt(3),
     )
@@ -135,7 +135,7 @@ class NetworkAttachDefinitions:
                 )
             )
             return resources
-        except ApiError:
+        except ManifestClientError:
             log.error(
                 "Failed to get Network Attachment Definitions in cluster. Retrying..."
             )

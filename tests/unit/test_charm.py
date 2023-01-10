@@ -9,6 +9,7 @@ import unittest.mock as mock
 import ops.testing
 import pytest
 from conftest import MockActionEvent
+from ops.manifests import ManifestClientError
 from ops.model import ActiveStatus, BlockedStatus, WaitingStatus
 from ops.testing import Harness
 from yaml import YAMLError
@@ -102,10 +103,8 @@ def test_on_config_changed_raises(mock_apply, harness, charm, side_effect):
 
 
 @mock.patch("net_attach_definitions.NetworkAttachDefinitions.apply_manifests")
-def test_on_config_changed_api_error(
-    mock_apply, api_error_class, harness, charm, caplog
-):
-    mock_apply.side_effect = api_error_class()
+def test_on_config_changed_api_error(mock_apply, harness, charm, caplog):
+    mock_apply.side_effect = ManifestClientError("foo")
     harness.set_leader()
     with caplog.at_level(logging.INFO):
         charm.stored.nad_manifest = TEST_NAD
@@ -114,10 +113,8 @@ def test_on_config_changed_api_error(
 
 
 @mock.patch("net_attach_definitions.NetworkAttachDefinitions.scrub_resources")
-def test_scrub_net_attach_defs_api_error(
-    mock_scrub, api_error_class, harness, charm, caplog
-):
-    mock_scrub.side_effect = api_error_class()
+def test_scrub_net_attach_defs_api_error(mock_scrub, harness, charm, caplog):
+    mock_scrub.side_effect = ManifestClientError("foo")
     harness.set_leader()
     with caplog.at_level(logging.INFO):
         event = mock.MagicMock()
@@ -126,11 +123,13 @@ def test_scrub_net_attach_defs_api_error(
 
 
 @mock.patch("net_attach_definitions.NetworkAttachDefinitions.remove_resources")
-def test_on_remove_api_error(mock_remove, api_error_class, harness, charm, caplog):
-    mock_remove.side_effect = api_error_class()
+def test_on_remove_api_error(mock_remove, harness, charm, caplog):
+    mock_remove.side_effect = ManifestClientError("foo")
     harness.set_leader()
     with caplog.at_level(logging.INFO):
-        charm._on_remove("mock-event")
+        mock_event = mock.MagicMock()
+        charm._on_remove(mock_event)
+        mock_event.defer.assert_called_once()
         assert "Failed to remove net-attach-defs from the cluster" in caplog.text
 
 
