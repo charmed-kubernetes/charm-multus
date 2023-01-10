@@ -3,7 +3,6 @@ import logging
 import re
 import shlex
 import time
-from pathlib import Path
 
 import pytest
 
@@ -11,29 +10,6 @@ log = logging.getLogger(__name__)
 
 
 @pytest.mark.abort_on_fail
-@pytest.mark.skip_if_deployed
-async def test_deploy_k8s_core(ops_test):
-
-    overlays = [
-        ops_test.Bundle("kubernetes-core", channel="edge"),
-        Path("tests/data/kube-ovn-overlay.yaml"),
-        Path("tests/data/vsphere-overlay.yaml"),
-    ]
-
-    log.info("Rendering overlays...")
-    bundle, *overlays = await ops_test.async_render_bundles(*overlays)
-
-    log.info("Deploying k8s-core...")
-    model = ops_test.model_full_name
-    juju_cmd = f"deploy -m {model} {bundle} --trust " + " ".join(
-        f"--overlay={f}" for f in overlays
-    )
-
-    await ops_test.juju(*shlex.split(juju_cmd), fail_msg="Bundle deploy failed")
-
-    await ops_test.model.wait_for_idle(status="active", timeout=60 * 60)
-
-
 async def test_deploy_charm(ops_test, k8s_model):
     log.info("Build charm...")
     charm = await ops_test.build_charm(".")
