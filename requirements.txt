@@ -2,4 +2,4 @@ ops
 lightkube
 cerberus
 tenacity
-git+https://github.com/canonical/ops-lib-manifest.git@c5d6a00084954af7578dd0f456491f4ee60e0311
+git+https://github.com/canonical/ops-lib-manifest.git@a02d83af8febeed39b7324b0247368cfc7105d73
