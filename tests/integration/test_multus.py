@@ -1,8 +1,8 @@
 import asyncio
 import logging
 import re
-import shlex
 import time
+from pathlib import Path
 
 import pytest
 
@@ -11,13 +11,17 @@ log = logging.getLogger(__name__)
 
 @pytest.mark.abort_on_fail
 async def test_deploy_charm(ops_test, k8s_model):
-    log.info("Build charm...")
-    charm = await ops_test.build_charm(".")
+    charm = next(Path(".").glob("multus*.charm"), None)
+    if not charm:
+        log.info("Building Charm...")
+        charm = await ops_test.build_charm(".")
 
-    _, k8s_alias, model_name = k8s_model
+    _, k8s_alias = k8s_model
     with ops_test.model_context(k8s_alias) as model:
-        juju_cmd = f"deploy {charm.resolve()} -m {model_name} --trust"
-        await ops_test.juju(*shlex.split(juju_cmd), fail_msg="Deploy charm failed")
+        await model.deploy(
+            entity_url=charm.resolve(),
+            trust=True,
+        )
 
         await model.block_until(lambda: "multus" in model.applications, timeout=60 * 3)
         await model.wait_for_idle(status="active", timeout=60 * 5)

@@ -1,29 +1,153 @@
+name: multus
+title: Multus CNI
+summary: Multus CNI for Kubernetes
+description: |
+  Multus CNI is a container network interface (CNI) plugin for Kubernetes that
+  enables attaching multiple network interfaces to pods.
+links:
+  contact: https://launchpad.net/~containers
+  issues:
+  - https://bugs.launchpad.net/charm-multus/+bugs
+  source:
+  - https://github.com/charmed-kubernetes/charm-multus
+  documentation: https://discourse.charmhub.io/t/multus-docs/6319
+assumes:
+  - k8s-api
+
 type: "charm"
 parts:
   charm:
-    build-packages: [git]
-    prime:
-      - upstream/**
-      - schemas/**
+    plugin: charm
+    build-packages:
+    - git
+    override-prime: |
+      git -C $CRAFT_PROJECT_DIR rev-parse --short HEAD > $CRAFT_PRIME/version
+      craftctl default
+  manifests:
+    plugin: dump
+    source: ./upstream
+    organize:
+      multus: upstream/multus
+    stage:
+    - -update.py
+  schemas:
+    plugin: dump
+    source: ./schemas
+    organize:
+      '*.yaml': schemas/
 bases:
   - build-on:
     - name: "ubuntu"
-      channel: "20.04"
+      channel: "22.04"
       architectures: ["amd64"]
     run-on:
-    - name: "ubuntu"
-      channel: "20.04"
-      architectures:
-        - amd64
-        - arm
-        - arm64
-        - ppc64le
-        - s390x
     - name: "ubuntu"
       channel: "22.04"
       architectures:
         - amd64
-        - arm
         - arm64
-        - ppc64le
+        - ppc64el
         - s390x
+
+config:
+  options:
+    image-registry:
+      default: rocks.canonical.com:443/cdk
+      type: string
+      description: |
+        Source registry of Multus CNI images.
+        By setting to a value, each image listed in the releases manifest
+        has its image-registry replaced.
+    release:
+      default: v3.9.1
+      description: Version of Multus CNI to deploy
+      type: string
+    network-attachment-definitions:
+      type: string
+      default: ''
+      description: |
+        YAML definitions of NetworkAttachmentDefinitions to create in Kubernetes.
+        Multuple NetworkAttachmentDefinitions can be specified by separating them
+        with ---.
+
+        Example value:
+
+        apiVersion: "k8s.cni.cncf.io/v1"
+        kind: NetworkAttachmentDefinition
+        metadata:
+          name: flannel
+          namespace: default
+        spec:
+          config: |
+            {
+                "cniVersion": "0.3.1",
+                "plugins": [
+                  {
+                    "type": "flannel",
+                    "delegate": {
+                      "hairpinMode": true,
+                      "isDefaultGateway": true
+                    }
+                  },
+                  {
+                    "type": "portmap",
+                    "capabilities": {"portMappings": true},
+                    "snat": true
+                  }
+                ]
+            }
+        ---
+        apiVersion: "k8s.cni.cncf.io/v1"
+        kind: NetworkAttachmentDefinition
+        metadata:
+          name: sriov
+          namespace: default
+          annotations:
+            k8s.v1.cni.cncf.io/resourceName: intel.com/sriov
+        spec:
+          config: |
+            {
+              "type": "sriov",
+              "ipam": {
+                "type": "host-local",
+                "ranges": [[{
+                    "subnet": "10.123.123.0/24"
+                }]]
+              }
+            }
+
+
+actions:
+  list-versions:
+    description: List Multus CNI Versions supported by this charm
+  list-resources:
+    description: List Multus CNI Resources of configured version
+    params:
+      resources:
+        type: string
+        default: ""
+        description: |
+          Space separated list of kubernetes resource types to filter list result
+  scrub-resources:
+    description: Remove deployments other than the current one
+    params:
+      resources:
+        type: string
+        default: ""
+        description: |
+          Space separated list of kubernetes resource types to filter scrubbing
+  sync-resources:
+    description: |
+      Add kubernetes resources which should be created by this charm which aren't
+      present within the cluster.
+    params:
+      resources:
+        type: string
+        default: ""
+        description: |
+          Space separated list of kubernetes resource types
+          to use a filter during the sync. This helps limit
+          which missing resources are applied.
+
+  scrub-net-attach-defs:
+    description: Remove remnants NetworkAttachmentDefinitions in the cluster

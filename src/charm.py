@@ -43,6 +43,7 @@ class MultusCharm(CharmBase):
         self.framework.observe(self.on.list_versions_action, self._list_versions)
         self.framework.observe(self.on.list_resources_action, self._list_resources)
         self.framework.observe(self.on.scrub_resources_action, self._scrub_resources)
+        self.framework.observe(self.on.sync_resources_action, self._sync_resources)
         self.framework.observe(
             self.on.scrub_net_attach_defs_action, self._scrub_net_attach_defs
         )
@@ -80,12 +81,32 @@ class MultusCharm(CharmBase):
         self.collector.list_versions(event)
 
     def _list_resources(self, event):
+        manifests = self.manifests.name
         resources = event.params.get("resources", "")
-        return self.collector.list_resources(event, resources=resources)
+        return self.collector.list_resources(
+            event, manifests=manifests, resources=resources
+        )
 
     def _scrub_resources(self, event):
+        manifests = self.manifests.name
         resources = event.params.get("resources", "")
-        return self.collector.scrub_resources(event, resources=resources)
+        return self.collector.scrub_resources(
+            event, manifests=manifests, resources=resources
+        )
+
+    def _sync_resources(self, event) -> None:
+        manifests = self.manifests.name
+        resources = event.params.get("resources", "")
+        try:
+            self.collector.apply_missing_resources(
+                event, manifests=manifests, resources=resources
+            )
+        except ManifestClientError as e:
+            msg = "Failed to sync missing resources: "
+            msg += " -> ".join(map(str, e.args))
+            event.set_results({"result": msg})
+        else:
+            self.stored.deployed = True
 
     def _update_status(self, _):
         if not self.stored.deployed:

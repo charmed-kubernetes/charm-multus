@@ -1,18 +1,19 @@
 import logging
-import os
+import random
 import shlex
-from collections import namedtuple
+import string
+from dataclasses import dataclass
 from pathlib import Path
-from random import choices
-from string import ascii_lowercase, digits
 from typing import Tuple, Union
 
-import juju.utils
 import pytest
-import yaml
+import pytest_asyncio
+from kubernetes import config as k8s_config
+from kubernetes.client import Configuration
 from lightkube import Client, KubeConfig, codecs
 from lightkube.generic_resource import load_in_cluster_generic_resources
-from lightkube.resources.core_v1 import Pod
+from lightkube.models.meta_v1 import ObjectMeta
+from lightkube.resources.core_v1 import Namespace, Pod
 from pytest_operator.plugin import OpsTest
 
 log = logging.getLogger(__name__)
@@ -26,9 +27,14 @@ def pytest_addoption(parser):
     )
 
 
-@pytest.fixture(scope="module")
+@dataclass
+class CharmedKubernetes:
+    kubeconfig: Path
+    model: str
+
+
+@pytest_asyncio.fixture(scope="module")
 async def charmed_kubernetes(ops_test):
-    CharmedKubernetes = namedtuple("CharmedKubernetes", "kubeconfig,model")
     with ops_test.model_context("main") as model:
         deploy, control_plane_app = True, "kubernetes-control-plane"
         current_model = ops_test.request.config.option.model
@@ -79,14 +85,27 @@ async def charmed_kubernetes(ops_test):
 
 
 @pytest.fixture(scope="module")
-async def client(charmed_kubernetes):
+def module_name(request):
+    return request.module.__name__.replace("_", "-")
+
+
+@pytest_asyncio.fixture(scope="module")
+async def k8s_client(charmed_kubernetes, module_name):
+    rand_str = "".join(random.choices(string.ascii_lowercase + string.digits, k=5))
+    namespace = f"{module_name}-{rand_str}"
     config = KubeConfig.from_file(charmed_kubernetes.kubeconfig)
     client = Client(
         config=config.get(context_name="juju-context"),
+        namespace=namespace,
         trust_env=False,
     )
     load_in_cluster_generic_resources(client)
-    yield client
+    namespace_obj = Namespace(metadata=ObjectMeta(name=namespace))
+    log.info(f"Creating namespace {namespace} for use with lightkube client")
+    client.create(namespace_obj)
+    yield client, namespace
+    log.info(f"Deleting namespace {namespace} for use with lightkube client")
+    client.delete(Namespace, namespace)
 
 
 @pytest.fixture(scope="module")
@@ -121,116 +140,50 @@ def kubectl_exec(kubectl):
     return f
 
 
-@pytest.fixture(scope="module")
-def module_name(request):
-    return request.module.__name__.replace("_", "-")
-
-
-@pytest.fixture(scope="module")
-async def k8s_cloud(charmed_kubernetes, module_name, ops_test, request):
-    """Use an existing k8s-cloud or create a k8s-cloud
-    for deploying a new k8s model into"""
-    cloud_name = request.config.option.k8s_cloud or f"{module_name}-k8s-cloud"
-    controller = await ops_test.model.get_controller()
-    try:
-        current_clouds = await controller.clouds()
-        if f"cloud-{cloud_name}" in current_clouds.clouds:
-            yield cloud_name
-            return
-    finally:
-        await controller.disconnect()
-
-    with ops_test.model_context("main"):
-        log.info(f"Adding cloud '{cloud_name}'...")
-        os.environ["KUBECONFIG"] = str(charmed_kubernetes.kubeconfig)
-        await ops_test.juju(
-            "add-k8s",
-            cloud_name,
-            f"--controller={ops_test.controller_name}",
-            "--client",
-            check=True,
-            fail_msg=f"Failed to add-k8s {cloud_name}",
-        )
-    yield cloud_name
-
-    with ops_test.model_context("main"):
-        log.info(f"Removing cloud '{cloud_name}'...")
-        await ops_test.juju(
-            "remove-cloud",
-            cloud_name,
-            "--controller",
-            ops_test.controller_name,
-            "--client",
-            check=True,
-        )
-
-
-@pytest.fixture(scope="module")
-async def k8s_model(k8s_cloud, ops_test: OpsTest):
+@pytest_asyncio.fixture(scope="module")
+async def k8s_model(ops_test: OpsTest, charmed_kubernetes):
     model_alias = "k8s-model"
     log.info("Creating k8s model ...")
-    # Create model with Juju CLI to work around a python-libjuju bug
-    # https://github.com/juju/python-libjuju/issues/603
-    model_name = "test-multus-" + "".join(choices(ascii_lowercase + digits, k=4))
-    await ops_test.juju(
-        "add-model",
-        f"--controller={ops_test.controller_name}",
-        model_name,
-        k8s_cloud,
-        "--no-switch",
-    )
-    model = await ops_test.track_model(
-        model_alias,
-        model_name=model_name,
-        cloud_name=k8s_cloud,
-        credential_name=k8s_cloud,
-        keep=False,
-    )
-    model_uuid = model.info.uuid
-    yield model, model_alias, model_name
-    timeout = 10 * 60
-
-    multus_app = model.applications.get("multus")
-    if multus_app:
-        await multus_app.destroy(force=True)
-
-    await ops_test.forget_model(model_alias, timeout=timeout, allow_failure=False)
-
-    async def model_removed():
-        _, stdout, stderr = await ops_test.juju("models", "--format", "yaml")
-        if _ != 0:
-            return False
-        model_list = yaml.safe_load(stdout)["models"]
-        which = [m for m in model_list if m["model-uuid"] == model_uuid]
-        return len(which) == 0
-
-    log.info("Removing k8s model")
-    await juju.utils.block_until_with_coroutine(model_removed, timeout=timeout)
-    # Update client's model cache
-    await ops_test.juju("models")
-    log.info("k8s model removed")
+    try:
+        config = type.__call__(Configuration)
+        k8s_config.load_config(
+            client_configuration=config, config_file=str(charmed_kubernetes.kubeconfig)
+        )
+        cloud_name = ops_test.request.config.getoption("--k8s-cloud")
+        k8s_cloud = await ops_test.add_k8s(
+            cloud_name, kubeconfig=config, skip_storage=False
+        )
+        k8s_model = await ops_test.track_model(
+            model_alias, cloud_name=k8s_cloud, keep=ops_test.ModelKeep.NEVER
+        )
+        yield k8s_model, model_alias
+    finally:
+        await ops_test.forget_model(model_alias, timeout=10 * 60, allow_failure=True)
 
 
 @pytest.fixture()
-def kube_ovn_subnet(client):
+def kube_ovn_subnet(k8s_client):
+    client, _ = k8s_client
     log.info("Creating Kube-OVN subnet")
     path = Path("tests/data/test_subnet.yaml")
-    resources = codecs.load_all_yaml(path.read_text())
-    for rsc in resources:
-        client.create(rsc)
-
-    yield
-
-    log.info("Deleting Kube-OVN subnet")
-    for rsc in resources:
-        client.delete(type(rsc), rsc.metadata.name, namespace=rsc.metadata.namespace)
-    log.info("Removed Kube-OVN subnet")
+    resources = []
+    for rsc in codecs.load_all_yaml(path.read_text()):
+        resources.append(client.create(rsc))
+    try:
+        yield
+    finally:
+        log.info("Deleting Kube-OVN subnet")
+        for rsc in reversed(resources):
+            client.delete(
+                type(rsc), rsc.metadata.name, namespace=rsc.metadata.namespace
+            )
+        log.info("Removed Kube-OVN subnet")
 
 
 @pytest.fixture()
 async def kube_ovn_nad(ops_test, kube_ovn_subnet, k8s_model):
     log.info("Configuring Multus Charm with Kube-OVN NAD")
-    _, k8s_alias, _ = k8s_model
+    _, k8s_alias = k8s_model
     with ops_test.model_context(k8s_alias) as model:
         multus_app = model.applications["multus"]
         path = Path.cwd() / "tests/data/kube_ovn_nad.yaml"
@@ -243,23 +196,22 @@ async def kube_ovn_nad(ops_test, kube_ovn_subnet, k8s_model):
 
 
 @pytest.fixture()
-def multinic_pod(client: Client, kube_ovn_nad):
+def multinic_pod(k8s_client, kube_ovn_nad):
     log.info("Creating Test Pod")
+    client, _ = k8s_client
     path = Path.cwd() / "tests/data/multinic_pod.yaml"
-    with open(path) as f:
-        for rsc in codecs.load_all_yaml(f):
-            client.create(rsc)
+    resources = []
+    for rsc in codecs.load_all_yaml(path.read_text()):
+        resources.append(client.create(rsc))
     pod = list(client.list(Pod, namespace="default"))[0]
 
     client.wait(Pod, "multinicpod", for_conditions=["Ready"], namespace="default")
-
-    yield pod
-
-    log.info("Deleting Test Pod")
-    with open(path) as f:
-        for rsc in codecs.load_all_yaml(f):
+    try:
+        yield pod
+    finally:
+        log.info("Deleting Test Pod")
+        for rsc in reversed(resources):
             client.delete(
                 type(rsc), rsc.metadata.name, namespace=rsc.metadata.namespace
             )
-
-    log.info("Removed Test Pod")
+        log.info("Removed Test Pod")
