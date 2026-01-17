@@ -6,23 +6,30 @@ jobs:
     name: VSphere Integration Test
     runs-on: self-hosted
     timeout-minutes: 120
+    env:
+      # Set default values
+      EXTRA_ARGS: "--basetemp=/home/ubuntu/pytest"
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+      - name: Read charmcraft version file
+        id: charmcraft
+        run: echo "channel=$(cat .charmcraft-channel)" >> $GITHUB_OUTPUT
       - name: Setup Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: '3.10'
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
         with:
           provider: vsphere
           credentials-yaml: ${{ secrets.CREDENTIALS_YAML }}
+          charmcraft-channel: ${{ steps.charmcraft.outputs.channel }}
           clouds-yaml: ${{ secrets.CLOUDS_YAML }}
           bootstrap-constraints: "arch=amd64 cores=2 mem=4G"
-          bootstrap-options: "${{ secrets.FOCAL_BOOTSTRAP_OPTIONS }} --model-default datastore=vsanDatastore --model-default primary-network=VLAN_2763 --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions"
+          bootstrap-options: "${{ secrets.NOBLE_BOOTSTRAP_OPTIONS }} --model-default datastore=vsanDatastore --model-default primary-network=VLAN_2763 --config caas-image-repo=rocks.canonical.com/cdk/jujusolutions"
       - name: Run test
-        run: tox -e integration -- --model-config=.github/data/proxy_config.yaml
+        run: tox -e integration -- ${EXTRA_ARGS}
       - name: Setup Debug Artifact Collection
         if: ${{ failure() }}
         run: mkdir tmp
@@ -34,7 +41,7 @@ jobs:
           mv juju-crashdump-* tmp/ | true
       - name: Upload debug artifacts
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: test-run-artifacts
           path: tmp

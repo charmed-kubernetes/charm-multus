@@ -1,8 +1,9 @@
-venv/
 build/
 *.charm
-
-.coverage
+juju-crashdump-*
 __pycache__/
-*.py[cod]
+.coverage
 .vscode/
+tests/
+requirements-test.txt
+tox.ini

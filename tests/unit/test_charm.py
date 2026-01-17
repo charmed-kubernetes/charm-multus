@@ -182,12 +182,25 @@ def test_list_resources(mock_list, harness):
     harness.begin_with_initial_hooks()
     mock_event = MockActionEvent({})
     harness.charm._list_resources(mock_event)
-    mock_list.assert_called_once_with(mock_event, resources="")
+    mock_list.assert_called_once_with(mock_event, manifests="multus", resources="")
 
 
-@mock.patch("charm.Collector.scrub_resources")
-def test_scrub_resources(mock_list, harness):
+@mock.patch("charm.Collector.apply_missing_resources")
+def test_sync_resources(mock_sync, harness):
     harness.begin_with_initial_hooks()
     mock_event = MockActionEvent({})
-    harness.charm._scrub_resources(mock_event)
-    mock_list.assert_called_once_with(mock_event, resources="")
+    harness.charm._sync_resources(mock_event)
+    mock_sync.assert_called_once_with(mock_event, manifests="multus", resources="")
+
+
+@mock.patch("charm.Collector.apply_missing_resources")
+def test_sync_resources_failure(mock_sync, harness):
+    harness.begin_with_initial_hooks()
+    mock_sync.side_effect = ManifestClientError("boo", "foo")
+    output = harness.run_action("sync-resources", {})
+    mock_sync.assert_called_once()
+    first_call, *_ = mock_sync.call_args_list
+    mock_sync.assert_called_once_with(
+        first_call.args[0], manifests="multus", resources=""
+    )
+    assert "Failed to sync missing resources:" in output.results["result"]
