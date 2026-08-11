@@ -52,7 +52,7 @@ bases:
 config:
   options:
     image-registry:
-      default: rocks.canonical.com:443/cdk
+      default: ghcr.io/canonical/cdk
       type: string
       description: |
         Source registry of Multus CNI images.
