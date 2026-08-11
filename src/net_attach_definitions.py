@@ -1,6 +1,7 @@
 # Copyright 2022 Canonical Ltd.
 # See LICENSE file for licensing details.
 """Module for managing Network Attachment Definitions"""
+
 import logging
 import traceback
 from typing import List, Set
