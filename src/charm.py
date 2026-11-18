@@ -59,7 +59,19 @@ class MultusCharm(CharmBase):
             log.error(msg)
             event.fail(msg)
 
+    def _legacy_release_blocked(self):
+        """Never replace whatever the formerly mutable v4.0 selector resolved to."""
+        if self.manifests.current_release != "v4.0":
+            return False
+        self.unit.status = BlockedStatus(
+            "Legacy release v4.0 used mutable images. Inspect running image digests, "
+            "then set release to an explicit patch (e.g. v4.3.2)."
+        )
+        return True
+
     def _on_config_changed(self, event):
+        if self._legacy_release_blocked():
+            return
         current_nads = self.stored.nad_manifest
         na_definitions = self.config.get("network-attachment-definitions")
 
@@ -88,6 +100,9 @@ class MultusCharm(CharmBase):
         )
 
     def _scrub_resources(self, event):
+        if self._legacy_release_blocked():
+            event.fail(self.unit.status.message)
+            return
         manifests = self.manifests.name
         resources = event.params.get("resources", "")
         return self.collector.scrub_resources(
@@ -95,6 +110,9 @@ class MultusCharm(CharmBase):
         )
 
     def _sync_resources(self, event) -> None:
+        if self._legacy_release_blocked():
+            event.fail(self.unit.status.message)
+            return
         manifests = self.manifests.name
         resources = event.params.get("resources", "")
         try:
@@ -109,6 +127,8 @@ class MultusCharm(CharmBase):
             self.stored.deployed = True
 
     def _update_status(self, _):
+        if self._legacy_release_blocked():
+            return
         if not self.stored.deployed:
             return
 
@@ -127,6 +147,8 @@ class MultusCharm(CharmBase):
             self.app.status = ActiveStatus(self.collector.long_version)
 
     def _install_or_upgrade(self, event):
+        if self._legacy_release_blocked():
+            return
         if not self.unit.is_leader():
             self.unit.status = ActiveStatus("Ready")
             return
