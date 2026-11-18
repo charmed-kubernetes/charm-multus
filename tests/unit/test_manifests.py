@@ -48,15 +48,19 @@ def test_loadable_thin_bundles(harness, release):
         "/opt/cni/bin",
     }
     assert "--multus-conf-file=auto" in spec.containers[0].args
-    assert spec.containers[0].command in [["/entrypoint.sh"], ["/thin_entrypoint"]]
+    command = spec.containers[0].command
+    assert command in [["/entrypoint.sh"], ["/thin_entrypoint"]]
     containers = spec.containers + spec.initContainers
     assert len(containers) == 2
     assert len({container.image for container in containers}) == 1
     for container in containers:
-        assert re.fullmatch(
-            r"ghcr.io/canonical/cdk/k8snetworkplumbingwg/multus-cni:v\d+\.\d+\.\d+",
+        pinned = re.fullmatch(
+            r"ghcr.io/canonical/cdk/k8snetworkplumbingwg/multus-cni:v(\d+)\.\d+\.\d+",
             container.image,
         )
+        assert pinned
+        # v4+ images are distroless (no /entrypoint.sh or cp); 3.x lacks thin_entrypoint.
+        assert (int(pinned.group(1)) >= 4) == (command == ["/thin_entrypoint"])
 
 
 @pytest.mark.parametrize("deployed", [True, False])

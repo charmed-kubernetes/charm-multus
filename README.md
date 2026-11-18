@@ -17,12 +17,16 @@ Upstream [supports Kubernetes versions maintained by the Kubernetes community](h
 which [includes Kubernetes 1.36](https://kubernetes.io/releases/). Bundling older
 Multus releases does not imply they have been validated with Kubernetes 1.36.
 
-The historical `release=v4.0` bundle is retained with both images pinned to
-v4.0.0 instead of following the mutable `stable` tag. The charm **blocks
-reconciliation while `release=v4.0` is selected**, including resource sync/scrub
-actions: an existing deployment may already run a newer image resolved from
-`stable`, so applying the historical bundle could silently downgrade it. Inspect
-the running container/init-container image digests, then explicitly configure a
+The historical `release=v4.0` bundle predates the upstream v4.0.0 release: it is
+the 3.9-generation thin manifest (`/entrypoint.sh` plus a `cp` init container),
+which v4.0.0 and later distroless images cannot run. Its images previously
+followed the mutable `stable` tag, which in the Charmed Kubernetes registries
+(`ghcr.io/canonical/cdk`, `rocks.canonical.com:443/cdk`) resolves to the same
+digest as v3.9.1; both images are now pinned to v3.9.1. Because a custom
+`image-registry` may have resolved `stable` to a different image, the charm
+**blocks reconciliation while `release=v4.0` is selected**, including resource
+sync/scrub actions, rather than replacing whatever is running. Inspect the
+running container/init-container image digests, then explicitly configure a
 patch release (for example, `juju config multus release=v4.3.2`) appropriate for
 the installed version and cluster. Existing workloads and NADs are left untouched
 until that choice. New installations should also choose a patch release. The

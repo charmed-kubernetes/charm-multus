@@ -60,7 +60,7 @@ class MultusCharm(CharmBase):
             event.fail(msg)
 
     def _legacy_release_blocked(self):
-        """Never reconcile the formerly mutable selector to an older pinned image."""
+        """Never replace whatever the formerly mutable v4.0 selector resolved to."""
         if self.manifests.current_release != "v4.0":
             return False
         self.unit.status = BlockedStatus(
