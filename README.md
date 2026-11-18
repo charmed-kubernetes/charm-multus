@@ -46,3 +46,21 @@ configured `image-registry` and validate primary-network connectivity, existing
 attachments, and creation/deletion of secondary-network pods during the rolling
 DaemonSet update. Never remove the primary CNI configuration or the existing
 NetworkAttachmentDefinitions as part of the upgrade.
+
+### Known upgrade issue: stale `00-multus.conf`
+
+The 3.x entrypoint always writes `/etc/cni/net.d/00-multus.conf`. The v4.x thin
+entrypoint writes `00-multus.conflist` instead when the primary CNI configuration
+uses CNI version 1.0.0 or later (for example Calico v3.32), and it does not remove
+an existing `00-multus.conf`. Container runtimes load the alphabetically first
+configuration, so the stale `00-multus.conf` stays in use with its old CNI
+version and its old copy of the primary configuration. The same applies when the
+primary CNI moves to 1.0.0 or later after Multus v4.x is installed and the Multus
+pods restart. Upstream provides no startup migration for this (the
+`--cleanup-config-on-exit` flag only acts when the new process exits), and the
+v4.x images have no shell, so the charm does not clean up node files.
+
+After the DaemonSet has rolled out, check `/etc/cni/net.d` on every node. If both
+`00-multus.conf` and `00-multus.conflist` exist, the `.conf` file is the stale
+Multus-generated configuration: remove only that file and verify new pods. Never
+remove the primary CNI's own configuration files.
