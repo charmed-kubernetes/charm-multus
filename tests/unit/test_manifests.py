@@ -1,6 +1,7 @@
 # Copyright 2026 Canonical Ltd.
 # See LICENSE file for licensing details.
 
+import copy
 import re
 from pathlib import Path
 from unittest import mock
@@ -8,6 +9,7 @@ from unittest import mock
 import pytest
 from ops.model import ActiveStatus, BlockedStatus
 from ops.testing import Harness
+from yaml import safe_dump, safe_load
 
 from charm import MultusCharm
 
@@ -113,3 +115,50 @@ def test_explicit_patch_choice_unblocks_upgrade(harness):
         charm._install_or_upgrade(mock.MagicMock())
         apply.assert_called_once()
     assert isinstance(charm.unit.status, ActiveStatus)
+
+
+# Schema default shipped before this charm revision; fixture for the refresh test.
+PREVIOUS_DEFAULT = "v3.9.1"
+
+
+def _applied_daemonset_images(lk_client):
+    return {
+        container.image.rsplit(":", 1)[1]
+        for call in lk_client.apply.call_args_list
+        if call.args[0].kind == "DaemonSet"
+        for container in call.args[0].spec.template.spec.containers
+    }
+
+
+@pytest.mark.parametrize("user_release", [None, PREVIOUS_DEFAULT])
+def test_refresh_applies_new_schema_default(lk_client, user_release):
+    """Refresh with release unset rolls out the new schema default; pins persist."""
+    charmcraft = safe_load(Path("charmcraft.yaml").read_text())
+    new_default = charmcraft["config"]["options"]["release"]["default"]
+    assert new_default == Path("upstream/multus/version").read_text().strip()
+    assert new_default != PREVIOUS_DEFAULT
+    previous_config = copy.deepcopy(charmcraft["config"])
+    previous_config["options"]["release"]["default"] = PREVIOUS_DEFAULT
+
+    # Charm revision with the previous schema default is installed.
+    previous = Harness(MultusCharm, config=safe_dump(previous_config))
+    previous.set_leader()
+    if user_release:
+        previous.update_config({"release": user_release})
+    previous.begin_with_initial_hooks()
+    assert _applied_daemonset_images(lk_client) == {PREVIOUS_DEFAULT}
+    previous.cleanup()
+    lk_client.apply.reset_mock()
+
+    # `juju refresh` to this revision: upgrade-charm, then config-changed.
+    refreshed = Harness(MultusCharm)
+    refreshed.set_leader()
+    if user_release:
+        refreshed.update_config({"release": user_release})
+    refreshed.begin()
+    refreshed.charm.on.upgrade_charm.emit()
+    refreshed.charm.on.config_changed.emit()
+    expected = user_release or new_default
+    assert _applied_daemonset_images(lk_client) == {expected}
+    assert refreshed.charm.stored.deployed
+    refreshed.cleanup()
