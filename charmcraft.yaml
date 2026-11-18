@@ -59,7 +59,7 @@ config:
         By setting to a value, each image listed in the releases manifest
         has its image-registry replaced.
     release:
-      default: v3.9.1
+      default: v4.3.2
       description: Version of Multus CNI to deploy
       type: string
     network-attachment-definitions:
