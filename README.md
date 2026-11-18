@@ -49,18 +49,59 @@ NetworkAttachmentDefinitions as part of the upgrade.
 
 ### Known upgrade issue: stale `00-multus.conf`
 
-The 3.x entrypoint always writes `/etc/cni/net.d/00-multus.conf`. The v4.x thin
-entrypoint writes `00-multus.conflist` instead when the primary CNI configuration
-uses CNI version 1.0.0 or later (for example Calico v3.32), and it does not remove
-an existing `00-multus.conf`. Container runtimes load the alphabetically first
-configuration, so the stale `00-multus.conf` stays in use with its old CNI
-version and its old copy of the primary configuration. The same applies when the
-primary CNI moves to 1.0.0 or later after Multus v4.x is installed and the Multus
-pods restart. Upstream provides no startup migration for this (the
-`--cleanup-config-on-exit` flag only acts when the new process exits), and the
-v4.x images have no shell, so the charm does not clean up node files.
+The 3.x entrypoint always writes `/etc/cni/net.d/00-multus.conf`. The default
+v4.3.2 thin entrypoint (and v4.2.4) writes `00-multus.conflist` instead when the
+primary CNI configuration uses CNI version 1.0.0 or later (for example Calico
+v3.32), and it does not remove an existing `00-multus.conf`. Container runtimes
+load the alphabetically first configuration, so the old `00-multus.conf` stays in
+use with its old CNI version and its old copy of the primary configuration. The
+same happens when the primary CNI moves to 1.0.0 or later after Multus v4.x is
+installed and the Multus pods restart. Upstream provides no startup migration,
+and the charm does not modify node files.
 
-After the DaemonSet has rolled out, check `/etc/cni/net.d` on every node. If both
-`00-multus.conf` and `00-multus.conflist` exist, the `.conf` file is the stale
-Multus-generated configuration: remove only that file and verify new pods. Never
-remove the primary CNI's own configuration files.
+Older bundled releases differ: v4.0.2 and v4.1.4 write a `.conflist` only for
+exactly CNI 1.0.0, and v4.0.2 can select an existing `00-multus.conf` as its
+primary configuration. The procedure below covers only the forward transition
+with v4.3.2 (or v4.2.4); it is not a general fix for older releases.
+
+Both files can also exist the other way round: after the primary CNI moves back
+below 1.0.0, v4.3.2 writes a current `00-multus.conf` and leaves an old
+`00-multus.conflist`. The presence of both files alone therefore does not show
+which one is stale.
+
+On each node, after the Multus pod on that node runs the v4.3.2 image and its
+`kube-multus` log shows `multus config file is created.`, run this read-only
+check:
+
+```bash
+sudo python3 - <<'EOF'
+import json
+from pathlib import Path
+
+d = Path("/etc/cni/net.d")
+configs = sorted(p for p in d.iterdir() if p.suffix in (".conf", ".conflist"))
+primary = next(p for p in configs if not p.name.startswith("00-multus.conf"))
+current = json.loads(primary.read_text())
+old = json.loads((d / "00-multus.conf").read_text())
+new = json.loads((d / "00-multus.conflist").read_text())
+version = tuple(int(part) for part in current["cniVersion"].split("."))
+print("primary config:", primary.name, current["cniVersion"])
+print("primary cniVersion >= 1.0.0:", version >= (1, 0, 0))
+print("00-multus.conf is a Multus config:", old.get("type") == "multus")
+print("00-multus.conflist was generated from the current primary:",
+      new["plugins"][0]["type"] == "multus"
+      and new["plugins"][0]["delegates"] == [current])
+EOF
+```
+
+Only if all three checks print `True`, move the old file out of the CNI
+configuration directory (keeping it as a backup), then create a test pod on that
+node and verify its primary network, DNS, requested secondary interface and
+`k8s.v1.cni.cncf.io/network-status` annotation:
+
+```bash
+sudo mv /etc/cni/net.d/00-multus.conf /root/00-multus.conf.pre-v4
+```
+
+If any check prints `False` or fails, change nothing on that node. Never remove
+or edit the primary CNI's own configuration files.
