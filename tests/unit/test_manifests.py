@@ -11,7 +11,6 @@ from ops.testing import Harness
 
 from charm import MultusCharm
 
-
 BUNDLES = sorted(path.name for path in Path("upstream/multus/manifests").iterdir())
 
 
@@ -70,9 +69,9 @@ def test_unknown_legacy_image_blocks_reconciliation(harness, deployed, handler):
     harness.update_config({"release": "v4.0"})
     charm = harness.charm
     charm.stored.deployed = deployed
-    with mock.patch.object(charm.manifests, "apply_manifests") as apply, mock.patch.object(
-        charm.nad_manager, "apply_manifests"
-    ) as apply_nads:
+    with mock.patch.object(
+        charm.manifests, "apply_manifests"
+    ) as apply, mock.patch.object(charm.nad_manager, "apply_manifests") as apply_nads:
         getattr(charm, handler)(mock.MagicMock())
     apply.assert_not_called()
     apply_nads.assert_not_called()
@@ -83,7 +82,10 @@ def test_unknown_legacy_image_blocks_reconciliation(harness, deployed, handler):
 
 @pytest.mark.parametrize(
     "handler,collector_method",
-    [("_sync_resources", "apply_missing_resources"), ("_scrub_resources", "scrub_resources")],
+    [
+        ("_sync_resources", "apply_missing_resources"),
+        ("_scrub_resources", "scrub_resources"),
+    ],
 )
 def test_legacy_actions_cannot_bypass_guard(harness, handler, collector_method):
     harness.update_config({"release": "v4.0"})

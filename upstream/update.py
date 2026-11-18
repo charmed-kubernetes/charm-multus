@@ -6,7 +6,6 @@ import re
 from pathlib import Path
 from urllib.request import urlopen
 
-
 ROOT = Path(__file__).resolve().parent / "multus" / "manifests"
 SOURCE = "https://raw.githubusercontent.com/k8snetworkplumbingwg/multus-cni"
 IMAGE = re.compile(r"(?m)^(\s*image:\s+)ghcr.io/k8snetworkplumbingwg/multus-cni:\S+$")
@@ -29,8 +28,12 @@ def release_manifest(version):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("versions", nargs="+", help="Explicit stable release tags to import")
-    parser.add_argument("--check", action="store_true", help="Check existing bundles without writing")
+    parser.add_argument(
+        "versions", nargs="+", help="Explicit stable release tags to import"
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="Check existing bundles without writing"
+    )
     args = parser.parse_args()
     for version in args.versions:
         manifest = release_manifest(version)
